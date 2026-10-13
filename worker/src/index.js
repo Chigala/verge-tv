@@ -63,18 +63,32 @@ function configuredPlayerUrl(request, env) {
   const imdb = url.searchParams.get('imdb') || '';
   const title = (url.searchParams.get('title') || '').slice(0, 300);
   const year = url.searchParams.get('year') || '';
+  const season = url.searchParams.get('season') || '';
+  const episode = url.searchParams.get('episode') || '';
   const startAt = url.searchParams.get('startAt') || url.searchParams.get('t') || '';
 
   if (type !== 'movie' && type !== 'tv') throw codedError('INVALID_MEDIA_TYPE', 400);
   if (!/^\d{1,12}$/.test(tmdb)) throw codedError('INVALID_TMDB_ID', 400);
   if (imdb && !/^tt\d{5,12}$/i.test(imdb)) throw codedError('INVALID_IMDB_ID', 400);
   if (year && !/^\d{4}$/.test(year)) throw codedError('INVALID_YEAR', 400);
+  if (type === 'tv' && !/^\d{1,4}$/.test(season)) throw codedError('INVALID_SEASON', 400);
+  if (type === 'tv' && !/^\d{1,5}$/.test(episode)) throw codedError('INVALID_EPISODE', 400);
   if (startAt && !/^\d{1,10}$/.test(startAt)) throw codedError('INVALID_START_TIME', 400);
 
-  const destination = assertSafeUpstreamUrl(
-    fillTemplate(env.TRAILER_URL_TEMPLATE, { type, tmdb, imdb, title, year }),
-    env,
-  );
+  const template = String(env.TRAILER_URL_TEMPLATE || '');
+  const hasSeasonField = /\{season\}/.test(template);
+  const hasEpisodeField = /\{episode\}/.test(template);
+  if (type === 'tv' && hasSeasonField !== hasEpisodeField) throw codedError('INCOMPLETE_EPISODE_TEMPLATE', 500);
+
+  const destination = assertSafeUpstreamUrl(fillTemplate(template, {
+    type, tmdb, imdb, title, year, season, episode,
+  }), env);
+  if (type === 'tv' && !/\{type\}/.test(template)) {
+    destination.pathname = destination.pathname.replace(/\/movie(?=\/|$)/i, '/tv');
+  }
+  if (type === 'tv' && !hasSeasonField) {
+    destination.pathname = destination.pathname.replace(/\/+$/, '') + '/' + season + '/' + episode;
+  }
   if (startAt) destination.searchParams.set('startAt', startAt);
   return destination;
 }
@@ -157,6 +171,8 @@ export function fillTemplate(template, values) {
     imdb: values.imdb || '',
     title: values.title || '',
     year: values.year || '',
+    season: values.season || '',
+    episode: values.episode || '',
   };
   const output = input.replace(/\{(\w+)\}/g, (match, name) => {
     if (!Object.prototype.hasOwnProperty.call(allowed, name)) throw codedError('UNKNOWN_TEMPLATE_FIELD');

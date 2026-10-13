@@ -62,6 +62,51 @@ test('returns a player URL without fetching it so Pages remains the iframe refer
   assert.deepEqual(await response.json(), { url: 'https://player.example.invalid/movie/533533' });
 });
 
+test('appends season and episode to a TV player template', async () => {
+  const env = {
+    ACCESS_PATH: 'private_test_path_1234',
+    APP_ORIGIN: 'https://chigala.github.io',
+    TRAILER_URL_TEMPLATE: 'https://player.example.invalid/{type}/{tmdb}',
+  };
+  const response = await handleRequest(new Request(
+    'https://worker.example.invalid/private_test_path_1234/player?type=tv&tmdb=66732&season=5&episode=3',
+    { headers: { Origin: env.APP_ORIGIN } },
+  ), env);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { url: 'https://player.example.invalid/tv/66732/5/3' });
+});
+
+test('converts an existing hard-coded movie route for TV playback', async () => {
+  const env = {
+    ACCESS_PATH: 'private_test_path_1234',
+    APP_ORIGIN: 'https://chigala.github.io',
+    TRAILER_URL_TEMPLATE: 'https://player.example.invalid/movie/{tmdb}',
+  };
+  const response = await handleRequest(new Request(
+    'https://worker.example.invalid/private_test_path_1234/player?type=tv&tmdb=66732&season=5&episode=3',
+    { headers: { Origin: env.APP_ORIGIN } },
+  ), env);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { url: 'https://player.example.invalid/tv/66732/5/3' });
+});
+
+test('supports explicit season and episode placeholders', async () => {
+  const env = {
+    ACCESS_PATH: 'private_test_path_1234',
+    APP_ORIGIN: 'https://chigala.github.io',
+    TRAILER_URL_TEMPLATE: 'https://player.example.invalid/{type}/{tmdb}/{season}/{episode}',
+  };
+  const response = await handleRequest(new Request(
+    'https://worker.example.invalid/private_test_path_1234/player?type=tv&tmdb=66732&season=5&episode=3',
+    { headers: { Origin: env.APP_ORIGIN } },
+  ), env);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { url: 'https://player.example.invalid/tv/66732/5/3' });
+});
+
 test('finds an escaped HLS URL without contacting it', () => {
   const page = String.raw`{"file":"https:\/\/media.example.invalid\/trailers\/master.m3u8?token=fake\u0026v=1"}`;
   assert.equal(

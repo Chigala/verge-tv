@@ -247,7 +247,7 @@
     <div class="meta" id="e-meta"></div>
     <div id="e-over"></div>
   </div>
-  <div class="keys"><span class="key">◀ ▶</span>previous / next episode<span class="key">BACK</span>close</div>
+  <div class="keys"><span class="key">OK</span>watch episode<span class="key">◀ ▶</span>previous / next episode<span class="key">BACK</span>close</div>
 </div>
 
 <div id="search" class="screen">
@@ -285,7 +285,7 @@
 </div>
 
 <div id="webs" class="screen">
-  <iframe id="web-frame" title="Trailer webpage" tabindex="-1" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen></iframe>
+  <iframe id="web-frame" title="Video player" tabindex="-1" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen></iframe>
   <div class="ov" id="web-ov">
     <div class="ttl" id="web-title"></div>
     <div class="keys" id="web-help"><span class="key">OK</span>play/pause<span class="key">◀ ▶</span>seek<span class="key">▼</span>fullscreen<span class="key">BACK</span>close</div>
@@ -736,13 +736,14 @@
       var b = el('div', 'btn' + (primary ? ' primary' : ''), label);
       b._fn = fn; bx.appendChild(b); btns.push(b);
     }
-    var hasTrailer = !!trailerApi && !!d.tm;
+    var isSeries = (d.k || it.k) === 's';
+    var hasPlayer = !!trailerApi && !!d.tm;
     var seasons = d.ss || [];
-    if (hasTrailer) addBtn('▶  Play', true, function () { playTrailer(d); });
-    if (seasons.length) addBtn('Episodes', !hasTrailer, function () { det.z = det.zones[seasonZone + 1].els.length ? seasonZone + 1 : seasonZone; paintDetails(); });
+    if (hasPlayer && !isSeries) addBtn('▶  Watch', true, function () { playMedia(d); });
+    if (seasons.length) addBtn('Episodes', true, function () { det.z = det.zones[seasonZone + 1].els.length ? seasonZone + 1 : seasonZone; paintDetails(); });
     if (d.v && d.v.length) addBtn('Trailer on phone', false, function () { showQR(ytUrl(d.v[0].k), 'Scan to watch the trailer', d.t); });
-    if (d.info) addBtn('More info', !hasTrailer && !seasons.length, function () { showQR(d.info, 'Scan for more info', d.t); });
-    $('d-note').textContent = hasTrailer ? '' : 'No trailer yet for this title.';
+    if (d.info) addBtn('More info', !hasPlayer && !seasons.length, function () { showQR(d.info, 'Scan for more info', d.t); });
+    $('d-note').textContent = !hasPlayer ? 'Playback is unavailable for this title.' : (isSeries ? 'Choose a season and episode to watch.' : '');
     if (btns.length) det.zones.push({ els: btns });
 
     // Where to watch (TMDB / JustWatch, Nigeria)
@@ -946,15 +947,22 @@
   }
   function episodeKey(k) {
     var n = epi.season.eps.length;
+    if (k === K.OK) { playEpisode(); return true; }
     if (k === K.LEFT && epi.i > 0) epi.i--;
     else if (k === K.RIGHT && epi.i < n - 1) epi.i++;
-    else return k === K.UP || k === K.DOWN || k === K.OK;
+    else return k === K.UP || k === K.DOWN;
     paintEpisode();
     // Keep the Episodes row in step, so BACK lands on the episode last shown.
     for (var z = 0; z < det.zones.length; z++)
       if (det.zones[z].episodes) for (var i = 0; i < det.zones[z].els.length; i++)
         if (det.zones[z].els[i]._v.ep === epi.season.eps[epi.i]) { det.cols[z] = i; paintDetails(); }
     return true;
+  }
+
+  function playEpisode() {
+    if (!epi) return;
+    var ep = epi.season.eps[epi.i];
+    playMedia(epi.d, epi.season.n, ep.n, epi.season.nm + ' · Episode ' + ep.n + (ep.t ? ' · ' + ep.t : ''));
   }
 
   /* ================= search ================= */
@@ -1121,20 +1129,24 @@
   /* ================= trailers ================= */
   function ytUrl(key) { return 'https://www.youtube.com/watch?v=' + key; }
   var trailerResolveId = 0, trailerResolveTimer = 0, trailerRequest = null;
-  function trailerPlayerUrl(d) {
+  function playerLookupUrl(d, season, episode) {
     if (!trailerApi || !d.tm) return '';
     var base = trailerApi.replace(/\/+$/, '');
-    return base + '/player?type=' + (d.k === 's' ? 'tv' : 'movie') +
+    var isSeries = d.k === 's';
+    var url = base + '/player?type=' + (isSeries ? 'tv' : 'movie') +
       '&tmdb=' + encodeURIComponent(d.tm) +
       '&imdb=' + encodeURIComponent(d.imdb || '') +
       '&title=' + encodeURIComponent(d.t || '') +
       '&year=' + encodeURIComponent(d.y || '');
+    if (isSeries) url += '&season=' + encodeURIComponent(season) + '&episode=' + encodeURIComponent(episode);
+    return url;
   }
   // The Worker fills the private template, then this page performs the iframe
   // navigation so the player receives the normal GitHub Pages referrer.
-  function playTrailer(d) {
-    var url = trailerPlayerUrl(d);
+  function playMedia(d, season, episode, episodeLabel) {
+    var url = playerLookupUrl(d, season, episode);
     if (!url) return;
+    var fromScreen = screen;
     var requestId = ++trailerResolveId;
     clearTimeout(trailerResolveTimer);
     if (trailerRequest) { try { trailerRequest.abort(); } catch (e) {} }
@@ -1147,22 +1159,24 @@
       if (req.readyState !== 4) return;
       if (trailerRequest === req) trailerRequest = null;
       clearTimeout(trailerResolveTimer);
-      if (requestId !== trailerResolveId || screen !== 'details') return;
+      if (requestId !== trailerResolveId || screen !== fromScreen) return;
       var data = null;
       try { data = JSON.parse(req.responseText || '{}'); } catch (e) {}
       if (req.status < 200 || req.status >= 300 || !data || !/^https:\/\//i.test(data.url || '')) {
         toast('The player is unavailable right now.');
         return;
       }
-      playWebPage(data.url, d.t + ' · Trailer', d);
+      var title = d.t + (episodeLabel ? ' · ' + episodeLabel : '');
+      var progressId = (d.imdb || d.tm || d.t) + (season != null ? '-s' + season + '-e' + episode : '');
+      playWebPage(data.url, title, d, progressId);
     };
     req.onerror = req.ontimeout = function () {
       if (trailerRequest === req) trailerRequest = null;
       clearTimeout(trailerResolveTimer);
-      if (requestId === trailerResolveId && screen === 'details') toast('Couldn’t open the player. Try again.');
+      if (requestId === trailerResolveId && screen === fromScreen) toast('Couldn’t open the player. Try again.');
     };
     trailerResolveTimer = setTimeout(function () {
-      if (requestId !== trailerResolveId || screen !== 'details') return;
+      if (requestId !== trailerResolveId || screen !== fromScreen) return;
       if (trailerRequest === req) trailerRequest = null;
       try { req.abort(); } catch (e) {}
       toast('Couldn’t open the player. Try again.');
@@ -1214,11 +1228,11 @@
     clearTimeout(webOvT);
     webOvT = setTimeout(function () { if (!webPaused) $('web-ov').className = 'ov off'; }, 3500);
   }
-  function playWebPage(url, title, d) {
+  function playWebPage(url, title, d, progressId) {
     overlayFrom = screen;
     webBaseUrl = url;
     webOrigin = webOriginOf(url);
-    webProgressKey = 'verge-progress-' + (d.imdb || d.tm || d.t);
+    webProgressKey = 'verge-progress-' + (progressId || d.imdb || d.tm || d.t);
     webProgress = readWebProgress();
     webDuration = 0;
     webPaused = true;
