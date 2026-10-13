@@ -66,12 +66,17 @@ the real value, using Cloudflare's hidden interactive secret prompt:
 cd worker
 npm install
 npx wrangler login
+npm test
+npm run deploy
 npx wrangler secret put TRAILER_URL_TEMPLATE
 npx wrangler secret put ACCESS_PATH
 npx wrangler secret put PLAYBACK_TOKEN_SECRET
-npm test
 npm run deploy
 ```
+
+The first deployment creates the Worker without a usable route. Each interactive
+`secret put` creates and deploys a new Worker version, and the final deployment
+confirms that the checked-in code and non-secret configuration are current.
 
 Requirements for the two generated values:
 
