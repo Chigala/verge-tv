@@ -26,7 +26,7 @@ You need: the TV and computer on the same network, and a TV that lets you set DN
 
 1. On the computer, from the `installer` folder:
    ```bash
-   sudo python3 vidaa_installer.py --app-url <APP URL>
+   sudo python3 vidaa_installer.py
    ```
    It prints this computer's IP address. Leave it running.
 2. On the TV: Settings → Network → Network Configuration → your connection →
@@ -36,7 +36,8 @@ You need: the TV and computer on the same network, and a TV that lets you set DN
 5. Set the TV's DNS back to **automatic**, then restart the TV.
 6. Press Ctrl+C in the installer window.
 
-To remove the app later, repeat with the same `--app-url` and press **Uninstall**.
+The app lives at https://chigala.github.io/verge-tv/ by default; pass `--app-url` and `--name` to install a different web app.
+To remove it later, repeat the steps and press **Uninstall**.
 
 If the page says the install function is not found, your TV's firmware blocks
 custom installs; use a Browser bookmark instead.
