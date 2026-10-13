@@ -56,7 +56,9 @@ The Worker accepts a movie/TV identifier, fetches the configured source page,
 finds a plain HLS/MP4 media URL, encrypts it into a short-lived opaque token,
 and proxies the manifest and media back to the TV. It rewrites variant streams,
 segments, audio, subtitles, initialization files and key URIs. It deliberately
-does not bypass CAPTCHA, login or DRM challenges.
+does not bypass CAPTCHA, login or DRM challenges. If the initial HTML contains
+no media URL, a Cloudflare Browser Run fallback executes the page and observes
+only media requests. It never takes screenshots or returns page content.
 
 The real source is not required for development or automated testing. All
 repository tests use invented `.invalid` domains. Only the owner should enter
@@ -99,6 +101,19 @@ The endpoint path is intentionally obscure, but obscurity is not authentication;
 the Worker also validates identifiers, blocks private upstream hosts, issues
 expiring encrypted media tokens, restricts browser origins and emits only
 sanitized error codes. Cloudflare observability is disabled in `wrangler.jsonc`.
+
+Browser Run is used only after static discovery fails. Cloudflare currently
+includes 10 browser minutes per day on the Workers Free plan; when that allowance
+is exhausted the TV receives the sanitized `BROWSER_RUN_LIMIT_REACHED` error.
+After pulling a Worker code update, existing secrets are retained and only these
+commands are needed:
+
+```bash
+cd worker
+npm install
+npm test
+npm run deploy
+```
 
 ## Install it into the TV's Apps list
 

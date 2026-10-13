@@ -62,7 +62,7 @@ async function resolveTrailer(request, env, rootPath, cors) {
 
   let resolved;
   try {
-    resolved = await resolveMedia(sourceUrl, env);
+    resolved = await resolveMediaWithBrowserFallback(sourceUrl, env);
   } catch (error) {
     return safeError(errorCode(error, 'UPSTREAM_UNAVAILABLE'), statusForError(error), cors);
   }
@@ -133,6 +133,212 @@ async function resolveMedia(sourceUrl, env) {
     kind: /\.m3u8(?:[?#]|$)/i.test(mediaUrl) ? 'hls' : 'video',
     headers: playbackHeaders(page),
   };
+}
+
+async function resolveMediaWithBrowserFallback(sourceUrl, env) {
+  try {
+    return await resolveMedia(sourceUrl, env);
+  } catch (error) {
+    if (errorCode(error, '') !== 'NO_PLAYABLE_MEDIA') throw error;
+    if (!env.BROWSER) throw codedError('BROWSER_RUN_NOT_CONFIGURED', 503);
+    return resolveMediaInBrowser(sourceUrl, env);
+  }
+}
+
+async function resolveMediaInBrowser(sourceUrl, env) {
+  let browser;
+  let page;
+  try {
+    browser = await launchBrowser(env.BROWSER);
+    page = await browser.newPage();
+    const candidates = [];
+    const pendingInspections = new Set();
+
+    page.on('request', (request) => {
+      const inspection = inspectBrowserRequest(request, candidates).catch(() => {});
+      pendingInspections.add(inspection);
+      inspection.finally(() => pendingInspections.delete(inspection));
+    });
+    page.on('response', (response) => {
+      const inspection = inspectBrowserResponse(response, candidates).catch(() => {});
+      pendingInspections.add(inspection);
+      inspection.finally(() => pendingInspections.delete(inspection));
+    });
+
+    let navigationFailed = false;
+    try {
+      await page.goto(sourceUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    } catch (_) {
+      navigationFailed = true;
+    }
+
+    await delay(1500);
+    if (await browserShowsChallenge(page)) throw codedError('SOURCE_REQUIRES_INTERACTION', 409);
+    if (!candidates.length) {
+      await activateBrowserPlayers(page);
+      await delay(9000);
+    }
+    await Promise.allSettled(Array.from(pendingInspections));
+    if (await browserShowsChallenge(page)) throw codedError('SOURCE_REQUIRES_INTERACTION', 409);
+
+    const selected = selectBrowserCandidate(candidates);
+    if (!selected) {
+      throw codedError(navigationFailed ? 'BROWSER_NAVIGATION_FAILED' : 'NO_PLAYABLE_MEDIA', navigationFailed ? 502 : 404);
+    }
+    assertSafeUpstreamUrl(selected.url, env);
+    return { url: selected.url, kind: selected.kind, headers: selected.headers };
+  } catch (error) {
+    if (error && error.code) throw error;
+    const message = String(error && error.message || '').toLowerCase();
+    if (message.includes('429') || message.includes('time limit')) {
+      throw codedError('BROWSER_RUN_LIMIT_REACHED', 429);
+    }
+    throw codedError('BROWSER_RUN_FAILED', 502);
+  } finally {
+    if (page) { try { await page.close(); } catch (_) {} }
+    if (browser) { try { await browser.close(); } catch (_) {} }
+  }
+}
+
+let browserLibrary;
+
+async function launchBrowser(binding) {
+  browserLibrary ||= import('@cloudflare/playwright');
+  const { launch } = await browserLibrary;
+  return launch(binding);
+}
+
+async function inspectBrowserRequest(request, candidates) {
+  const kind = browserMediaKind(request.url(), '');
+  if (!kind) return;
+  addBrowserCandidate(candidates, request.url(), kind, await readBrowserHeaders(request));
+}
+
+async function inspectBrowserResponse(response, candidates) {
+  const url = response.url();
+  const responseHeaders = await readBrowserHeaders(response);
+  const contentType = String(responseHeaders['content-type'] || '');
+  const requestHeaders = await readBrowserHeaders(response.request());
+  const kind = browserMediaKind(url, contentType);
+  if (kind) {
+    addBrowserCandidate(candidates, url, kind, requestHeaders);
+    return;
+  }
+
+  const resourceType = response.request().resourceType();
+  if (resourceType !== 'xhr' && resourceType !== 'fetch') return;
+  if (!/(?:json|javascript|text\/plain)/i.test(contentType)) return;
+  const length = Number(responseHeaders['content-length'] || 0);
+  if (length > 512 * 1024) return;
+  const body = await response.text();
+  if (new TextEncoder().encode(body).byteLength > 512 * 1024) return;
+  const extracted = extractMediaUrl(body, url);
+  if (!extracted) return;
+  addBrowserCandidate(
+    candidates,
+    extracted,
+    /\.m3u8(?:[?#]|$)/i.test(extracted) ? 'hls' : 'video',
+    requestHeaders,
+  );
+}
+
+async function readBrowserHeaders(source) {
+  if (source && typeof source.allHeaders === 'function') return await source.allHeaders();
+  if (source && typeof source.headers === 'function') return await source.headers();
+  return {};
+}
+
+export function browserMediaKind(url, contentType) {
+  if (/\.m3u8(?:[?#]|$)/i.test(url || '') || /(?:mpegurl|vnd\.apple\.mpegurl)/i.test(contentType || '')) return 'hls';
+  if (/\.(?:mp4|m4v|webm|mov)(?:[?#]|$)/i.test(url || '') || /video\/(?:mp4|webm|quicktime)/i.test(contentType || '')) return 'video';
+  return '';
+}
+
+function addBrowserCandidate(candidates, url, kind, requestHeaders) {
+  if (!/^https:\/\//i.test(url || '')) return;
+  if (candidates.some((candidate) => candidate.url === url)) return;
+  candidates.push({
+    url,
+    kind,
+    headers: browserPlaybackHeaders(requestHeaders),
+    score: browserCandidateScore(url, kind),
+  });
+  if (candidates.length > 24) candidates.sort((a, b) => b.score - a.score).length = 24;
+}
+
+export function browserCandidateScore(url, kind) {
+  const value = String(url || '').toLowerCase();
+  let score = kind === 'hls' ? 100 : 60;
+  if (/(?:^|[\W_])(?:ad|ads|advert|preroll|tracking)(?:[\W_]|$)/i.test(value)) score -= 80;
+  if (/(?:trailer|movie|episode|stream|master|playlist|manifest)/i.test(value)) score += 20;
+  return score;
+}
+
+function selectBrowserCandidate(candidates) {
+  if (!candidates.length) return null;
+  return candidates.slice().sort((a, b) => b.score - a.score)[0];
+}
+
+export function browserPlaybackHeaders(input) {
+  const source = input || {};
+  const output = {};
+  const allowed = ['accept', 'accept-language', 'authorization', 'cookie', 'origin', 'referer', 'user-agent'];
+  for (const name of Object.keys(source)) {
+    const lower = name.toLowerCase();
+    if (!allowed.includes(lower) && !lower.startsWith('x-')) continue;
+    if (lower.startsWith('x-forwarded-') || lower.startsWith('x-real-') || lower.startsWith('x-vercel-')) continue;
+    const value = String(source[name] || '');
+    if (value && value.length <= 8192) output[lower] = value;
+  }
+  return output;
+}
+
+async function browserShowsChallenge(page) {
+  const frames = page.frames();
+  for (const frame of frames) {
+    if (/(?:captcha|challenge|recaptcha|hcaptcha)/i.test(frame.url() || '')) return true;
+    try {
+      const blocked = await frame.evaluate(() => {
+        const text = String(document.body && document.body.innerText || '').slice(0, 10000).toLowerCase();
+        return text.includes('confirm you are not a robot') ||
+          text.includes('verify you are human') ||
+          !!document.querySelector('.g-recaptcha, .h-captcha, iframe[src*="captcha"], [class*="captcha"]');
+      });
+      if (blocked) return true;
+    } catch (_) {}
+  }
+  return false;
+}
+
+async function activateBrowserPlayers(page) {
+  const frames = page.frames();
+  for (const frame of frames) {
+    if (/(?:captcha|challenge|recaptcha|hcaptcha)/i.test(frame.url() || '')) continue;
+    try {
+      await frame.evaluate(() => {
+        const videos = Array.from(document.querySelectorAll('video'));
+        for (const video of videos) {
+          video.muted = true;
+          const playing = video.play();
+          if (playing && playing.catch) playing.catch(() => {});
+        }
+        const selectors = [
+          '.vjs-big-play-button',
+          '.jw-icon-playback',
+          '[data-plyr="play"]',
+          'button[aria-label*="play" i]',
+        ];
+        for (const selector of selectors) {
+          const button = document.querySelector(selector);
+          if (button) { button.click(); break; }
+        }
+      });
+    } catch (_) {}
+  }
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function fetchWithSession(initialUrl, env) {
@@ -235,9 +441,7 @@ async function proxyMedia(request, env, rootPath, cors) {
     Accept: '*/*',
     'User-Agent': UPSTREAM_AGENT,
   });
-  if (payload.h && payload.h.referer) headers.set('Referer', payload.h.referer);
-  if (payload.h && payload.h.origin) headers.set('Origin', payload.h.origin);
-  if (payload.h && payload.h.cookie) headers.set('Cookie', payload.h.cookie);
+  applyPlaybackHeaders(headers, payload.h);
   const range = request.headers.get('range');
   if (range) headers.set('Range', range);
 
@@ -321,6 +525,18 @@ function filteredMediaHeaders(source, cors) {
   headers.set('Cache-Control', 'private, no-store');
   headers.set('X-Content-Type-Options', 'nosniff');
   return headers;
+}
+
+function applyPlaybackHeaders(headers, stored) {
+  if (!stored) return;
+  const names = ['accept', 'accept-language', 'authorization', 'cookie', 'origin', 'referer', 'user-agent'];
+  for (const name of Object.keys(stored)) {
+    const lower = name.toLowerCase();
+    if (!names.includes(lower) && !lower.startsWith('x-')) continue;
+    if (lower.startsWith('x-forwarded-') || lower.startsWith('x-real-') || lower.startsWith('x-vercel-')) continue;
+    const value = String(stored[name] || '');
+    if (value && value.length <= 8192) headers.set(name, value);
+  }
 }
 
 function isHls(contentType, url) {

@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractMediaUrl, fillTemplate, handleRequest, rewriteHls } from '../src/index.js';
+import {
+  browserCandidateScore,
+  browserMediaKind,
+  browserPlaybackHeaders,
+  extractMediaUrl,
+  fillTemplate,
+  handleRequest,
+  rewriteHls,
+} from '../src/index.js';
 
 test('fills the supported source template fields', () => {
   const result = fillTemplate('https://example.invalid/{type}/{tmdb}?imdb={imdb}', {
@@ -43,6 +51,33 @@ test('rewrites variants, segments, keys and maps', async () => {
   assert.match(rewritten, /opaque\/https%3A%2F%2Fmedia\.example\.invalid%2Fpath%2Fkeys%2Fkey\.bin/);
   assert.match(rewritten, /opaque\/https%3A%2F%2Fmedia\.example\.invalid%2Fpath%2Finit\.mp4/);
   assert.match(rewritten, /opaque\/https%3A%2F%2Fmedia\.example\.invalid%2Fpath%2Fsegment-1\.ts/);
+});
+
+test('Browser Run discovery selects playlists and full videos, not transport segments', () => {
+  assert.equal(browserMediaKind('https://media.example.invalid/master.m3u8', ''), 'hls');
+  assert.equal(browserMediaKind('https://media.example.invalid/watch', 'application/vnd.apple.mpegurl'), 'hls');
+  assert.equal(browserMediaKind('https://media.example.invalid/trailer.mp4', ''), 'video');
+  assert.equal(browserMediaKind('https://media.example.invalid/segment.ts', 'video/mp2t'), '');
+  assert.ok(
+    browserCandidateScore('https://media.example.invalid/trailer/master.m3u8', 'hls') >
+    browserCandidateScore('https://ads.example.invalid/preroll/master.m3u8', 'hls'),
+  );
+});
+
+test('Browser Run stores only playback-relevant request headers', () => {
+  assert.deepEqual(browserPlaybackHeaders({
+    Cookie: 'session=fake',
+    Referer: 'https://player.example.invalid/',
+    Authorization: 'Bearer fake',
+    'X-Playback-Token': 'fake',
+    'X-Forwarded-For': '127.0.0.1',
+    Host: 'media.example.invalid',
+  }), {
+    cookie: 'session=fake',
+    referer: 'https://player.example.invalid/',
+    authorization: 'Bearer fake',
+    'x-playback-token': 'fake',
+  });
 });
 
 test('resolves and proxies an HLS stream without exposing the upstream URL', async (t) => {
