@@ -39,6 +39,7 @@
     <div class="btn" data-act="uninstall">Uninstall</div>
     <div class="btn" data-act="info">TV info</div>
     <div class="btn" data-act="diagnose">Diagnose</div>
+    <div class="btn" data-act="check">Check apps</div>
   </div>
 
   <div id="out"></div>
@@ -65,6 +66,14 @@
     var out = document.getElementById('out');
     out.appendChild(line);  // newest at the bottom, like a log
     report(msg);
+  }
+  function save(name, text) {  // POSTs data to the installer, which writes it to installer/backups/
+    try {
+      var x = new XMLHttpRequest();
+      x.open('POST', '/save?name=' + encodeURIComponent(name));
+      x.setRequestHeader('Content-Type', 'text/plain');
+      x.send(text == null ? '' : String(text));
+    } catch (e) { report('save failed: ' + e); }
   }
   function isVidaa() { return typeof window.Hisense_installApp === 'function'; }
 
@@ -113,10 +122,43 @@
         });
       } catch (e) { say('Uninstall failed: ' + e, 'err'); }
     },
+    // Read-only: looks for the newer install route and backs up the TV's app list to the computer.
+    check: function () {
+      say('Checking installed apps (read-only, nothing is changed)…');
+      if (typeof window.HiUtils_createRequest === 'function') {
+        say('HiUtils_createRequest found ✓ (newer install method is possible)', 'ok');
+        try {
+          var cur = window.HiUtils_createRequest('fileRead', { path: 'websdk/Appinfo.json', mode: 6 });
+          report('raw fileRead ret: ' + JSON.stringify(cur && cur.ret));
+          if (cur && cur.ret) {
+            save('appinfo-backup', cur.msg);
+            var n = '?';
+            try { n = JSON.parse(cur.msg).AppInfo.length; } catch (e) {}
+            say('Read the TV app list (' + n + ' entries) and saved a backup to your computer.', 'ok');
+          } else {
+            say('Could not read the TV app list: ' + (cur && cur.msg), 'err');
+          }
+        } catch (e) { say('fileRead threw: ' + e, 'err'); }
+      } else {
+        say('HiUtils_createRequest NOT found on this TV.', 'err');
+      }
+      if (typeof window.Hisense_getInstalledApps === 'function') {
+        try {
+          var direct = window.Hisense_getInstalledApps(function (list) {
+            save('installed-apps', typeof list === 'string' ? list : JSON.stringify(list));
+            say('getInstalledApps replied (saved to your computer).', 'ok');
+          });
+          if (direct !== undefined) {
+            save('installed-apps-direct', typeof direct === 'string' ? direct : JSON.stringify(direct));
+            say('getInstalledApps returned data (saved to your computer).', 'ok');
+          }
+        } catch (e) { say('getInstalledApps threw: ' + e, 'err'); }
+      }
+    },
     diagnose: function () {
       var names = [];
       for (var k in window) {
-        try { if (/hisense|vidaa|omi|tvapp|appmanager/i.test(k)) names.push(k); } catch (e) {}
+        try { if (/hisense|hiutils|vidaa|omi|tvapp|appmanager|vowos/i.test(k)) names.push(k); } catch (e) {}
       }
       names.sort();
       say('Found ' + names.length + ' VIDAA-related globals (full list sent to your computer).');

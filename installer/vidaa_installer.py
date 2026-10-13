@@ -30,11 +30,13 @@ import struct
 import subprocess
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CERT_DIR = os.path.join(HERE, "certs")
+BACKUP_DIR = os.path.join(HERE, "backups")
 HOSTNAMES = {"vidaahub.com", "www.vidaahub.com"}
 
 DEFAULT_APP_URL = "https://chigala.github.io/verge-tv/"
@@ -154,6 +156,23 @@ def make_handler(page_bytes):
                 self._send(200, page_bytes, "text/html; charset=utf-8")
             else:
                 self._send(404, b"Not found", "text/plain")
+
+        def do_POST(self):
+            # The install page saves TV data here (e.g. a backup of the app list).
+            url = urlparse(self.path)
+            if url.path != "/save":
+                self._send(404, b"Not found", "text/plain")
+                return
+            name = parse_qs(url.query).get("name", ["data"])[0]
+            name = "".join(ch for ch in name if ch.isalnum() or ch in "-_") or "data"
+            length = min(int(self.headers.get("Content-Length", 0)), 5 * 1024 * 1024)
+            body = self.rfile.read(length)
+            os.makedirs(BACKUP_DIR, exist_ok=True)
+            path = os.path.join(BACKUP_DIR, "%s-%s.txt" % (name, time.strftime("%Y%m%d-%H%M%S")))
+            with open(path, "wb") as f:
+                f.write(body)
+            log("  SAVE %d bytes from the TV -> %s" % (len(body), os.path.relpath(path, HERE)))
+            self._send(204, b"", "text/plain")
 
         def log_message(self, *args):
             pass
