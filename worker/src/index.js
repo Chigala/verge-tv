@@ -5,6 +5,9 @@ const STATIC_RESOLVER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWe
 const BROWSER_TIMEOUT = Symbol('browser-timeout');
 const STATIC_RESOLVER_MAX_REQUESTS = 12;
 const STATIC_RESOLVER_MAX_MS = 14000;
+const RESOLVER_MAX_MS = 58000;
+const UPSTREAM_FETCH_MAX_MS = 8000;
+const UPSTREAM_BODY_MAX_MS = 5000;
 
 export default {
   async fetch(request, env) {
@@ -66,7 +69,8 @@ async function resolveTrailer(request, env, rootPath, cors) {
 
   let resolved;
   try {
-    resolved = await resolveMediaWithBrowserFallback(sourceUrl, env);
+    resolved = await browserWithin(resolveMediaWithBrowserFallback(sourceUrl, env), RESOLVER_MAX_MS);
+    if (resolved === BROWSER_TIMEOUT) throw codedError('RESOLVER_TIMEOUT', 504);
   } catch (error) {
     return safeError(errorCode(error, 'UPSTREAM_UNAVAILABLE'), statusForError(error), cors);
   }
@@ -123,7 +127,8 @@ async function resolveMedia(sourceUrl, env) {
 
   const length = Number(response.headers.get('content-length') || 0);
   if (length > MAX_TEXT_BYTES) throw codedError('SOURCE_PAGE_TOO_LARGE', 502);
-  const text = await response.text();
+  const text = await browserWithin(response.text(), UPSTREAM_BODY_MAX_MS);
+  if (text === BROWSER_TIMEOUT) throw codedError('UPSTREAM_TIMEOUT', 504);
   if (new TextEncoder().encode(text).byteLength > MAX_TEXT_BYTES) {
     throw codedError('SOURCE_PAGE_TOO_LARGE', 502);
   }
@@ -202,8 +207,12 @@ async function resolveMultiHopMedia(sourceUrl, env) {
     const length = Number(response.headers.get('content-length') || 0);
     if (length > MAX_TEXT_BYTES) continue;
     let text;
-    try { text = await response.text(); } catch (_) { continue; }
+    try { text = await browserWithin(response.text(), Math.min(UPSTREAM_BODY_MAX_MS, Math.max(1, deadline - Date.now()))); } catch (_) { continue; }
+    if (text === BROWSER_TIMEOUT) continue;
     if (new TextEncoder().encode(text).byteLength > MAX_TEXT_BYTES) continue;
+    if (/^\s*#EXTM3U(?:\s|$)/i.test(text)) {
+      return staticMediaResult(responseUrl, 'hls', item.referer || sourceUrl, session);
+    }
 
     const direct = extractMediaUrl(text, responseUrl) || extractEncodedMediaUrl(text, responseUrl);
     if (direct) {
@@ -217,6 +226,11 @@ async function resolveMultiHopMedia(sourceUrl, env) {
       );
     }
 
+    const templatedMedia = extractTemplateMediaCandidates(text, responseUrl);
+    for (let index = templatedMedia.length - 1; index >= 0; index--) {
+      const candidate = templatedMedia[index];
+      if (!seen.has(candidate)) queue.unshift({ url: candidate, referer: responseUrl, depth: item.depth + 1 });
+    }
     const candidates = extractStaticHopCandidates(text, responseUrl);
     for (const candidate of candidates) {
       if (seen.has(candidate)) continue;
@@ -225,6 +239,39 @@ async function resolveMultiHopMedia(sourceUrl, env) {
   }
 
   throw codedError('NO_PLAYABLE_MEDIA', 404);
+}
+
+// Playerjs pages can publish URLs with {v1}/{v2} placeholders and list
+// the eligible tmstr hosts separately. Expand only page-provided hosts.
+export function extractTemplateMediaCandidates(input, baseUrl) {
+  const text = decodePageEscapes(String(input || ''));
+  const suffixes = [];
+  const hostPattern = /https:\/\/(tmstr\d*\.[a-z0-9.-]+)/gi;
+  let match;
+  while ((match = hostPattern.exec(text)) && suffixes.length < 12) {
+    const hostname = match[1].toLowerCase();
+    const dot = hostname.indexOf('.');
+    const suffix = dot >= 0 ? hostname.slice(dot + 1) : '';
+    if (suffix && !suffixes.includes(suffix)) suffixes.push(suffix);
+  }
+  if (!suffixes.length) return [];
+
+  const output = [];
+  const fields = /\bfile\s*:\s*["']([^"']{1,32768})["']/gi;
+  while ((match = fields.exec(text)) && output.length < 24) {
+    const alternatives = match[1].split(/\s+or\s+/i).slice(0, 12);
+    for (const alternative of alternatives) {
+      if (!/\{v\d+\}/i.test(alternative)) continue;
+      for (const suffix of suffixes) {
+        const expanded = alternative.replace(/\{v\d+\}/gi, suffix);
+        const url = normalizeStaticUrl(expanded, baseUrl);
+        if (url && !output.includes(url)) output.push(url);
+        if (output.length >= 24) break;
+      }
+      if (output.length >= 24) break;
+    }
+  }
+  return output;
 }
 
 async function fetchStaticHop(url, referer, session, env) {
@@ -846,10 +893,13 @@ function delay(milliseconds) {
 }
 
 function browserWithin(promise, milliseconds) {
-  return Promise.race([
-    Promise.resolve(promise),
-    delay(milliseconds).then(() => BROWSER_TIMEOUT),
-  ]);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(BROWSER_TIMEOUT), milliseconds);
+    Promise.resolve(promise).then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
 }
 
 async function fetchWithSession(initialUrl, env) {
@@ -867,7 +917,19 @@ async function fetchWithSession(initialUrl, env) {
     if (cookie) headers.set('Cookie', cookie);
     if (referer) headers.set('Referer', referer);
 
-    const response = await fetch(current, { headers, redirect: 'manual' });
+    const options = { headers, redirect: 'manual' };
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      options.signal = AbortSignal.timeout(UPSTREAM_FETCH_MAX_MS);
+    }
+    let response;
+    try {
+      response = await fetch(current, options);
+    } catch (error) {
+      if (error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+        throw codedError('UPSTREAM_TIMEOUT', 504);
+      }
+      throw error;
+    }
     absorbCookies(response.headers, cookies);
     if (![301, 302, 303, 307, 308].includes(response.status)) {
       return { response, url: current, referer: current, cookie: cookieString(cookies) };
@@ -903,6 +965,7 @@ export function extractMediaUrl(input, baseUrl) {
   for (const candidate of candidates) {
     try {
       const clean = candidate.replace(/&amp;/gi, '&').replace(/[),;]+$/, '');
+      if (/\{v\d+\}/i.test(clean)) continue;
       const value = new URL(clean, baseUrl).toString();
       if (!normalized.includes(value)) normalized.push(value);
     } catch (_) {}

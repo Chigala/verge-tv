@@ -10,6 +10,7 @@ import {
   decodeHunterPacked,
   extractEncodedMediaUrl,
   extractMediaUrl,
+  extractTemplateMediaCandidates,
   fillTemplate,
   handleRequest,
   rewriteHls,
@@ -106,6 +107,81 @@ test('decodes bounded VidSrc-style Base64, XOR and Hunter values', () => {
   const hunterValue = Array.from(media, (character) => character.charCodeAt(0) + 'x').join('');
   const packed = `escape(r))}("${hunterValue}",0,"0123456789x",0,10,0)`;
   assert.equal(decodeHunterPacked(packed), media);
+});
+
+test('expands bounded VidSrc-style Playerjs host placeholders from the page', () => {
+  const page = `
+    <script>
+      const mirrors = ["https://tmstr1.edge-a.invalid", "https://tmstr2.edge-b.invalid"];
+      const player = { file: "https://video.{v1}/trailer/master.m3u8 or https://backup.{v2}/trailer/master.m3u8" };
+    </script>`;
+  assert.deepEqual(
+    extractTemplateMediaCandidates(page, 'https://player.example.invalid/prorcp/fixture'),
+    [
+      'https://video.edge-a.invalid/trailer/master.m3u8',
+      'https://video.edge-b.invalid/trailer/master.m3u8',
+      'https://backup.edge-a.invalid/trailer/master.m3u8',
+      'https://backup.edge-b.invalid/trailer/master.m3u8',
+    ],
+  );
+});
+
+test('follows a synthetic rcpvip, prorcp and templated-host HLS chain', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const calls = [];
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    calls.push(url);
+    if (url === 'https://source.invalid/movie/456') {
+      return new Response('<iframe id="player_iframe" src="https://player.invalid/rcpvip/fixture"></iframe>', {
+        headers: { 'Content-Type': 'text/html' },
+      });
+    }
+    if (url === 'https://player.invalid/rcpvip/fixture') {
+      return new Response('<script>const next = {src: "/prorcp/fixture"};</script>', {
+        headers: { 'Content-Type': 'text/html' },
+      });
+    }
+    if (url === 'https://player.invalid/prorcp/fixture') {
+      return new Response(`
+        <script>
+          const mirrors = ["https://tmstr1.edge.invalid"];
+          const player = {file: "https://video.{v1}/trailer/master.m3u8"};
+        </script>`, { headers: { 'Content-Type': 'text/html' } });
+    }
+    if (url === 'https://video.edge.invalid/trailer/master.m3u8') {
+      return new Response('#EXTM3U\n#EXTINF:4,\nsegment.ts', {
+        headers: { 'Content-Type': 'text/plain' },
+      });
+    }
+    if (url === 'https://video.edge.invalid/trailer/segment.ts') {
+      return new Response(new Uint8Array([7, 8, 9]), { headers: { 'Content-Type': 'video/mp2t' } });
+    }
+    throw new Error('unexpected synthetic URL: ' + url);
+  };
+
+  const env = {
+    ACCESS_PATH: 'private_test_path_1234',
+    APP_ORIGIN: 'https://chigala.github.io',
+    PLAYBACK_TOKEN_SECRET: 'synthetic-secret-that-is-longer-than-thirty-two-characters',
+    TRAILER_URL_TEMPLATE: 'https://source.invalid/{type}/{tmdb}',
+  };
+  const headers = { Origin: env.APP_ORIGIN };
+  const resolved = await handleRequest(new Request(
+    'https://worker.example.invalid/' + env.ACCESS_PATH + '/resolve?type=movie&tmdb=456',
+    { headers },
+  ), env);
+  assert.equal(resolved.status, 200);
+  const data = await resolved.json();
+  assert.doesNotMatch(data.url, /video\.edge\.invalid/);
+  assert.ok(calls.includes('https://player.invalid/prorcp/fixture'));
+  assert.ok(calls.includes('https://video.edge.invalid/trailer/master.m3u8'));
+
+  const manifest = await handleRequest(new Request(data.url, { headers }), env);
+  assert.equal(manifest.status, 200);
+  assert.match(await manifest.text(), /worker\.example\.invalid/);
 });
 
 test('follows a synthetic server-hash, XOR, redirect and Base64 media chain', async (t) => {
