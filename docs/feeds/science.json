@@ -1,0 +1,177 @@
+{
+ "section": "science",
+ "items": [
+  {
+   "title": "NASA dumped over 800GB of Artemis II data online",
+   "link": "https://www.theverge.com/science/1009379/nasa-800gb-artemis-ii-data",
+   "author": "Terrence O’Brien",
+   "ts": 1791732880000,
+   "categories": [
+    "News",
+    "Science",
+    "Space"
+   ],
+   "summary": "If you thought you'd seen all there is to see from the Artemis II mission, you're wrong. This week NASA posted over 800GB worth of science data, images, and videos on the Artemis II: Sights & Sounds of Science site. The archive includes over 11,000 photos and videos, over 8.5 hours of audio, and crew-annotated […]",
+   "body": [
+    "If you thought you'd seen all there is to see from the Artemis II mission, you're wrong. This week NASA posted over 800GB worth of science data, images, and videos on the Artemis II: Sights & Sounds of Science site. The archive includes over 11,000 photos and videos, over 8.5 hours of audio, and crew-annotated images, such as the one marking where they saw impact flashes on the dark side of the Moon. Together, they offer an unprecedented view inside a historic space mission.",
+    "One of the more exciting reveals was footage of the Artemis II team telling the ground team back in Houston about its observation of impact flashes. Impact flashes have …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/art002e016252_impactflash_annotation_croppedlarge.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "SpaceX announces plan to become a ‘major mobile carrier’",
+   "link": "https://www.theverge.com/science/1008467/spacex-announces-plan-to-become-a-major-mobile-carrier",
+   "author": "Emma Roth",
+   "ts": 1791494611000,
+   "categories": [
+    "News",
+    "Science",
+    "Space"
+   ],
+   "summary": "SpaceX has acquired a portfolio of low-band spectrum licenses - a move the company says \"will pave the way\" for its Starlink Mobile service to become a \"major\" US carrier. When the Federal Communications Commission signs off on the deal, SpaceX says it will deploy its new architecture that combines its satellite-to-mobile constellation with a […]",
+   "body": [
+    "SpaceX has acquired a portfolio of low-band spectrum licenses - a move the company says \"will pave the way\" for its Starlink Mobile service to become a \"major\" US carrier. When the Federal Communications Commission signs off on the deal, SpaceX says it will deploy its new architecture that combines its satellite-to-mobile constellation with a terrestrial mobile network, directly competing with T-Mobile, AT&T, and Verizon.",
+    "The licenses include up to 14 megahertz of paired spectrum in the 800 MHz band, which SpaceX says will allow Starlink Mobile's signal to penetrate through walls and buildings. SpaceX previously acquired 2GHz spectrum from …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2025/05/STKB355_SPACEX_C.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "The scariest thing about gray-market peptides is how little we know",
+   "link": "https://www.theverge.com/column/1006902/optimizer-bpc-157-gray-market-real-world-usage",
+   "author": "Victoria Song",
+   "ts": 1791392400000,
+   "categories": [
+    "Column",
+    "Health",
+    "Optimizer"
+   ],
+   "summary": "This is Optimizer, a weekly newsletter sent from Verge senior reviewer Victoria Song that dissects and discusses the latest gizmos and potions that swear they're going to change your life. Opt in for Optimizer here. Finding concrete data about gray-market peptides is a Sisyphean task. Unlike bona fide clinical drug trials, there are no official […]",
+   "body": [
+    "This is Optimizer, a weekly newsletter sent from Verge senior reviewer Victoria Song that dissects and discusses the latest gizmos and potions that swear they're going to change your life. Opt in for Optimizer here.",
+    "Finding concrete data about gray-market peptides is a Sisyphean task. Unlike bona fide clinical drug trials, there are no official numbers. There's little to no safety data. Some peptides have more anecdotal evidence than others, but a stranger on r/peptides is, perhaps, not an ideal information source. The fact is most people partaking in a dubiously legal activity aren't going to shout it from the rooftops. What we do know abo …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2025/12/258214_wellness_wild_west_is_back_with_GLP-3s_CVirginia2.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "Google invests millions in Mark Zuckerberg’s efforts to create a ‘virtual cell’",
+   "link": "https://www.theverge.com/tech/1006766/google-meta-biohub-investment-virtual-cell",
+   "author": "Emma Roth",
+   "ts": 1791384052000,
+   "categories": [
+    "AI",
+    "Google",
+    "Health"
+   ],
+   "summary": "Google DeepMind, Meta, and AI drug discovery startup Isomorphic Labs are jointly investing $300 million into an initiative to create a \"virtual cell\" that researchers can use to combat disease, as reported earlier by Reuters. The project is led by Biohub, a nonprofit biomedical research organization founded by Mark Zuckerberg and his wife, Priscilla Chan. […]",
+   "body": [
+    "Google DeepMind, Meta, and AI drug discovery startup Isomorphic Labs are jointly investing $300 million into an initiative to create a \"virtual cell\" that researchers can use to combat disease, as reported earlier by Reuters. The project is led by Biohub, a nonprofit biomedical research organization founded by Mark Zuckerberg and his wife, Priscilla Chan. It comes as part of a $1.8 billion \"Virtual Biology\" initiative to build AI datasets that could allow researchers to \"ask, predict, and answer biological questions digitally.\"",
+    "Founded in 2016, Biohub aims to prevent and cure diseases through the creation of a \"high-accuracy predictive mode …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/gettyimages-2243532165.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "AI could upend food delivery",
+   "link": "https://www.theverge.com/ai-artificial-intelligence/1005726/doordash-ai-agentic-food-delivery-bites",
+   "author": "Mia Sato",
+   "ts": 1791374400000,
+   "categories": [
+    "AI",
+    "Business",
+    "Food"
+   ],
+   "summary": "DoorDash, the leading food delivery app, processed 970 million orders in its second quarter this year and generated $4.5 billion in revenue. A 10-person startup called Bites is a blip in comparison: It has just around 300 restaurants signed up in the Bay Area, where it's operating as a pre-seed startup. But this summer, Bites […]",
+   "body": [
+    "DoorDash, the leading food delivery app, processed 970 million orders in its second quarter this year and generated $4.5 billion in revenue. A 10-person startup called Bites is a blip in comparison: It has just around 300 restaurants signed up in the Bay Area, where it's operating as a pre-seed startup. But this summer, Bites caught DoorDash's attention.",
+    "In August, a slew of restaurants in the Bay Area received a strange email from DoorDash, warning businesses that they may be listed without their consent on Bites.",
+    "The form letter, copies of which were seen by The Verge, said that DoorDash had heard from \"several partners\" that were adde …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/268795_Can_AI_reform_overpriced_food_delivery__CVirginia2.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "Google’s power-hungry data centers crave nuclear energy",
+   "link": "https://www.theverge.com/science/1006082/google-nuclear-energy-power-purchase-agreement-constellation",
+   "author": "Justine Calma",
+   "ts": 1791318730000,
+   "categories": [
+    "Energy",
+    "Environment",
+    "Google"
+   ],
+   "summary": "Google announced a new agreement to update six nuclear power plant sites across the US as the tech giant seeks to generate more electricity for its power-hungry data centers. Google signed the 20-year deal with Constellation, the leading nuclear power plant operator in the US. The power purchase agreement is meant to guarantee the revenue […]",
+   "body": [
+    "Google announced a new agreement to update six nuclear power plant sites across the US as the tech giant seeks to generate more electricity for its power-hungry data centers.",
+    "Google signed the 20-year deal with Constellation, the leading nuclear power plant operator in the US. The power purchase agreement is meant to guarantee the revenue needed to cover the cost of efficiency upgrades at existing nuclear plants and \"represents more than $4.3 billion of new investment by Constellation,\" according to the press release.",
+    "Over the next five years, the companies expect new equipment at each site to collectively lead to 890 megawatts of addition …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2025/05/STK093_Google_05.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "The planetary wave headed for California isn’t what you think it is",
+   "link": "https://www.theverge.com/science/1005077/el-nino-planetary-wave-kelvin",
+   "author": "Justine Calma",
+   "ts": 1791288000000,
+   "categories": [
+    "Environment",
+    "Science"
+   ],
+   "summary": "A rather strong \"planetary wave\" recently slammed into South America and is making its way toward California. In case you're worried about headlines warning of the supposedly \"freak\" phenomenon \"bringing trouble,\" it's worth understanding what this wave really is and isn't. Called a Kelvin wave, it's carrying warm water to the Americas that's typically trapped […]",
+   "body": [
+    "A rather strong \"planetary wave\" recently slammed into South America and is making its way toward California. In case you're worried about headlines warning of the supposedly \"freak\" phenomenon \"bringing trouble,\" it's worth understanding what this wave really is and isn't.",
+    "Called a Kelvin wave, it's carrying warm water to the Americas that's typically trapped farther west. That's raising sea levels along already vulnerable coastlines. These kinds of waves are common. When they do arrive, they can exacerbate existing problems. And this particular Kelvin wave could have more dramatic consequences than usual.",
+    "But \"If you're going to be out …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/gettyimages-2166966071.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "This startup is issuing AI-generated acne prescriptions",
+   "link": "https://www.theverge.com/ai-artificial-intelligence/1005075/nolla-health-acne-ai-prescriptions",
+   "author": "Emma Roth",
+   "ts": 1791231297000,
+   "categories": [
+    "AI",
+    "Health",
+    "News"
+   ],
+   "summary": "People in Utah can now use AI to get a prescription for acne treatment. On Monday, healthcare startup Nolla Health announced that users in the state can scan their faces using its app, allowing its AI system to analyze acne severity and autonomously write a prescription, as reported earlier by Bloomberg. The service is launching […]",
+   "body": [
+    "People in Utah can now use AI to get a prescription for acne treatment. On Monday, healthcare startup Nolla Health announced that users in the state can scan their faces using its app, allowing its AI system to analyze acne severity and autonomously write a prescription, as reported earlier by Bloomberg.",
+    "The service is launching as a pilot program with gradually loosening physician oversight. Two physicians will approve each AI-generated prescription before they're issued for the first 100 patients, but will start reviewing them only after they're prescribed for up to 500 patients. \"After that, physicians review a sample of at least 10% of …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/nolla-health-app.png?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "Our minds aren’t equipped to handle AI",
+   "link": "https://www.theverge.com/ai-artificial-intelligence/1003794/ai-education-computational-model-thought",
+   "author": "Benjamin Riley",
+   "ts": 1791194400000,
+   "categories": [
+    "AI",
+    "Report",
+    "Science"
+   ],
+   "summary": "Norbert Wiener, godfather of cybernetics, once said, \"The thought of every age is reflected in its technique.\" For the past century, our thought has been reflected in our computers, including by those in the AI industry. Google's Demis Hassabis calls the brain \"a biological approximation to a Turing machine.\" Elon Musk puts it more bluntly, […]",
+   "body": [
+    "Norbert Wiener, godfather of cybernetics, once said, \"The thought of every age is reflected in its technique.\" For the past century, our thought has been reflected in our computers, including by those in the AI industry. Google's Demis Hassabis calls the brain \"a biological approximation to a Turing machine.\" Elon Musk puts it more bluntly, declaring that \"people should just think of the brain as a biological computer.\" (Musk's brain often worries me.)",
+    "But humans are more complex than a straightforward comparison to computers gives us credit for - and far more than most of the AI industry seems to appreciate. And as their products push e …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/268726_Cognitive_hotdogs_PENEKOI_115fb1.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "If a data center is camouflaged in the woods, will anyone hate it?",
+   "link": "https://www.theverge.com/tech/1003681/microsoft-data-centers-ai-environment-biomimicry",
+   "author": "Justine Calma",
+   "ts": 1790942400000,
+   "categories": [
+    "AI",
+    "Energy",
+    "Environment"
+   ],
+   "summary": "San Antonio City Councilmember Ric Galvan remembers when data centers first arrived in his city in the 2000s, looking like relatively unassuming office buildings. But that's changed in recent years, as data centers have grown into massive \"hyperscale\" facilities spanning millions of square feet and housing the physical infrastructure for AI. There are now more […]",
+   "body": [
+    "San Antonio City Councilmember Ric Galvan remembers when data centers first arrived in his city in the 2000s, looking like relatively unassuming office buildings. But that's changed in recent years, as data centers have grown into massive \"hyperscale\" facilities spanning millions of square feet and housing the physical infrastructure for AI.",
+    "There are now more than a dozen data centers in Galvan's roughly 55-square-mile district, and he expects that number to grow to around 20 over the next few years if proposed projects are completed. They're clustered along two main roads, concentrating nuisances in the same neighborhoods: traffic and tr …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/268788_Datacenter_biomimicry_PARKIN_2-1.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  }
+ ]
+}

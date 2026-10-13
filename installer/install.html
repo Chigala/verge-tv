@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VIDAA App Installer</title>
+<style>
+  :root { --bg: #0e0e11; --panel: #1a1a20; --text: #f4f4f6; --muted: #9a9aa6; --accent: #3cffd0; --bad: #ff6b6b; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 1.4vw; padding: 5vw 6vw; }
+  h1 { font-size: 2.6vw; margin: 0 0 0.6vw; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); margin-bottom: 3vw; }
+  .app { display: flex; align-items: center; background: var(--panel); border-radius: 1vw; padding: 1.6vw; margin-bottom: 2.4vw; }
+  .app img { width: 7vw; height: 7vw; border-radius: 1.2vw; margin-right: 1.8vw; background: #26262e; }
+  .app .name { font-size: 2vw; font-weight: 700; }
+  .app .url { color: var(--muted); font-size: 1.1vw; margin-top: 0.4vw; word-break: break-all; }
+  .buttons { display: flex; margin-bottom: 2.4vw; }
+  .btn { padding: 1vw 2.2vw; margin-right: 1.2vw; border-radius: 99vw; background: var(--panel); font-weight: 700; border: 0.25vw solid transparent; }
+  .btn.focus { border-color: var(--accent); background: #24242c; }
+  .btn.primary { background: var(--accent); color: #000; }
+  .btn.primary.focus { border-color: #fff; background: var(--accent); }
+  #out { background: #000; border-radius: 1vw; padding: 1.4vw 1.8vw; min-height: 12vw; font-family: Menlo, Consolas, monospace; font-size: 1.15vw; line-height: 1.6; }
+  .ok { color: var(--accent); } .err { color: var(--bad); }
+  .hint { color: var(--muted); margin-top: 2vw; font-size: 1.1vw; }
+</style>
+</head>
+<body>
+  <h1>VIDAA App Installer</h1>
+  <div class="sub">Running from your computer. Use ◀ ▶ to choose and OK to press.</div>
+
+  <div class="app">
+    <img id="icon" alt="">
+    <div><div class="name" id="name"></div><div class="url" id="url"></div></div>
+  </div>
+
+  <div class="buttons" id="buttons">
+    <div class="btn primary" data-act="install">Install</div>
+    <div class="btn" data-act="uninstall">Uninstall</div>
+    <div class="btn" data-act="info">TV info</div>
+  </div>
+
+  <div id="out"></div>
+  <div class="hint">When it says installed: set the TV's DNS back to automatic, then restart the TV. The app will be in your Apps list.</div>
+
+<script>
+/* ES5 only: VIDAA browser engines vary. */
+(function () {
+  var APP = __APP_JSON__;
+  var focus = 0;
+  var buttons = document.getElementById('buttons').children;
+
+  document.getElementById('icon').src = APP.icon;
+  document.getElementById('name').textContent = APP.name;
+  document.getElementById('url').textContent = APP.url;
+
+  function report(msg) {  // also shown in the installer window on your computer
+    try { new Image().src = '/log?m=' + encodeURIComponent(msg); } catch (e) {}
+  }
+  function say(msg, cls) {
+    var line = document.createElement('div');
+    if (cls) line.className = cls;
+    line.textContent = '> ' + msg;
+    var out = document.getElementById('out');
+    out.insertBefore(line, out.firstChild);
+    report(msg);
+  }
+  function isVidaa() { return typeof window.Hisense_installApp === 'function'; }
+
+  // Tells the TV's home screen to reload its app list (same message vidaa-appstore sends).
+  function refreshApps(appId) {
+    var msg = JSON.stringify({
+      type: 'APPMessage', MsgType: 'appControl', action: 'updateAppState', source: 'browser',
+      startAppType: 2, param: { event: 'AllAppsUpdate', SubModuleName: 'AllApps', startFrom: '', appInfo: appId }
+    });
+    try {
+      if (window.omi_platform) window.omi_platform.sendPlatformMessage(msg);
+      else if (window.opera_omi) window.opera_omi.sendPlatformMessage(msg);
+    } catch (e) {}
+  }
+
+  function notAvailable() {
+    if (typeof window.Hisense_GetCountryCode === 'function') {
+      say('This TV hides the install function (Hisense_installApp). Your firmware has probably blocked custom installs.', 'err');
+    } else {
+      say('This doesn\'t look like a VIDAA TV browser, or the page wasn\'t opened as https://vidaahub.com.', 'err');
+    }
+  }
+
+  var actions = {
+    install: function () {
+      if (!isVidaa()) return notAvailable();
+      say('Installing ' + APP.name + '…');
+      try {
+        // Callback: a truthy status means it FAILED (undocumented API; matches vidaa-appstore).
+        window.Hisense_installApp(APP.id, APP.name, APP.icon, APP.icon, APP.icon, APP.url, 'store', function (status) {
+          if (status) { say('Install failed (status ' + status + ').', 'err'); }
+          else { say(APP.name + ' installed. Set DNS back to automatic and restart the TV.', 'ok'); refreshApps(APP.id); }
+        });
+      } catch (e) { say('Install failed: ' + e, 'err'); }
+    },
+    uninstall: function () {
+      if (typeof window.Hisense_uninstallApp !== 'function') return notAvailable();
+      say('Removing ' + APP.name + '…');
+      try {
+        // Here a truthy status means SUCCESS (also matches vidaa-appstore).
+        window.Hisense_uninstallApp(APP.id, function (status) {
+          if (status) { say(APP.name + ' removed.', 'ok'); refreshApps(); }
+          else { say('Uninstall failed (maybe it wasn\'t installed).', 'err'); }
+        });
+      } catch (e) { say('Uninstall failed: ' + e, 'err'); }
+    },
+    info: function () {
+      var fns = ['Hisense_GetBrand', 'Hisense_GetModelName', 'Hisense_GetFirmWareVersion', 'Hisense_GetCountryCode'];
+      var found = false;
+      for (var i = fns.length - 1; i >= 0; i--) {
+        if (typeof window[fns[i]] === 'function') {
+          found = true;
+          try { say(fns[i].replace('Hisense_Get', '') + ': ' + window[fns[i]]()); } catch (e) {}
+        }
+      }
+      if (!found) say('No VIDAA functions found in this browser.', 'err');
+      say('Install function available: ' + (isVidaa() ? 'yes' : 'NO'), isVidaa() ? 'ok' : 'err');
+    }
+  };
+
+  function paint() {
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].className = buttons[i].className.replace(/\s*focus/g, '') + (i === focus ? ' focus' : '');
+    }
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.keyCode === 37 && focus > 0) focus--;
+    else if (e.keyCode === 39 && focus < buttons.length - 1) focus++;
+    else if (e.keyCode === 13) actions[buttons[focus].getAttribute('data-act')]();
+    else return;
+    paint();
+    e.preventDefault();
+  }, false);
+
+  for (var i = 0; i < buttons.length; i++) {
+    (function (n) {
+      buttons[n].onclick = function () { focus = n; paint(); actions[buttons[n].getAttribute('data-act')](); };
+    })(i);
+  }
+
+  paint();
+  say('Ready. ' + (isVidaa() ? 'VIDAA install function found ✓' : 'Install function NOT found.'), isVidaa() ? 'ok' : 'err');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verge Headlines</title>
+<style>
+  /* Sized in vw so it scales from 1280x720 to 1920x1080 TV browsers. */
+  :root {
+    --bg: #0e0e11;
+    --panel: #1a1a20;
+    --text: #f4f4f6;
+    --muted: #9a9aa6;
+    --accent: #7b5cff;
+    --accent-2: #3cffd0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 1.15vw;
+    overflow: hidden;
+  }
+  /* 4vw padding keeps everything inside the TV's overscan-safe area. */
+  #app { height: 100vh; padding: 2.6vw 4vw 0; display: flex; flex-direction: column; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; }
+  .brand { font-size: 2.3vw; font-weight: 800; letter-spacing: -0.03em; }
+  .brand span { color: var(--accent-2); }
+  #clock { font-size: 1.6vw; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  #tabs { display: flex; margin: 1.6vw 0 1.4vw; }
+  .tab {
+    padding: 0.55vw 1.3vw; margin-right: 0.7vw; border-radius: 99vw;
+    color: var(--muted); font-size: 1.15vw; font-weight: 600;
+    border: 0.15vw solid transparent;
+  }
+  .tab .num { opacity: 0.55; margin-right: 0.4vw; }
+  .tab.active { background: var(--panel); color: var(--text); }
+  .tab.focus { border-color: var(--accent-2); color: var(--text); }
+
+  /* Extra room around the grid so the zoomed focus card isn't clipped. */
+  #scroller { flex: 1; overflow: hidden; position: relative; margin: -0.8vw -1.2vw 0; padding: 0.8vw 1.2vw 0; }
+  #grid { display: flex; flex-wrap: wrap; margin: 0 -0.7vw; padding-bottom: 4vw; }
+  .card {
+    width: calc(33.333% - 1.4vw); margin: 0 0.7vw 1.6vw;
+    background: var(--panel); border-radius: 0.8vw; overflow: hidden;
+    border: 0.22vw solid transparent;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+  }
+  .card.focus { border-color: var(--accent-2); transform: scale(1.035); box-shadow: 0 1vw 3vw rgba(0,0,0,0.6); }
+  .thumb { width: 100%; padding-top: 52%; background: #26262e center/cover no-repeat; }
+  .card .info { padding: 0.9vw 1.1vw 1.1vw; }
+  .kicker { color: var(--accent-2); font-size: 0.85vw; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+  .card h2 {
+    font-size: 1.35vw; line-height: 1.25; margin: 0.4vw 0 0.5vw; font-weight: 700;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+    min-height: 5.1vw;
+  }
+  .meta { color: var(--muted); font-size: 0.9vw; }
+
+  #status { color: var(--muted); font-size: 1.4vw; padding: 4vw 0; text-align: center; width: 100%; }
+
+  footer {
+    position: fixed; left: 0; right: 0; bottom: 0; padding: 0.9vw 4vw 1.5vw;
+    background: linear-gradient(transparent, var(--bg) 45%);
+    color: var(--muted); font-size: 0.95vw;
+  }
+  .key {
+    display: inline-block; padding: 0.1vw 0.5vw; border: 0.1vw solid #44444f; border-radius: 0.3vw;
+    color: var(--text); margin-right: 0.3vw;
+  }
+  footer .sep { margin: 0 1vw; opacity: 0.4; }
+
+  /* Reader panel */
+  #reader {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(8,8,10,0.97);
+    display: none; padding: 4vw 4vw 0;
+  }
+  #reader.open { display: flex; }
+  #reader .hero { width: 40%; flex-shrink: 0; }
+  #reader .hero div { width: 100%; padding-top: 60%; border-radius: 0.8vw; background: #26262e center/cover no-repeat; }
+  #reader .text { flex: 1; margin-left: 3vw; overflow: hidden; height: calc(100vh - 8vw); position: relative; }
+  #reader .inner { transition: transform 0.2s ease; padding-bottom: 6vw; }
+  #reader h1 { font-size: 2.4vw; line-height: 1.15; margin: 0.5vw 0 1vw; letter-spacing: -0.02em; }
+  #reader p { font-size: 1.45vw; line-height: 1.55; color: #d6d6dc; margin: 0 0 1.2vw; }
+  #reader .meta { font-size: 1.1vw; margin-bottom: 1.6vw; }
+  #reader .cta {
+    display: inline-block; margin-top: 0.6vw; padding: 0.8vw 1.6vw; border-radius: 99vw;
+    background: var(--accent-2); color: #000; font-weight: 700; font-size: 1.2vw;
+  }
+  #reader .pos { color: var(--muted); font-size: 1vw; margin-top: 1.4vw; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">Verge<span>.</span>Headlines</div>
+    <div id="clock"></div>
+  </header>
+  <div id="tabs"></div>
+  <div id="scroller"><div id="grid"></div></div>
+</div>
+
+<div id="reader">
+  <div class="hero"><div id="r-img"></div><div class="pos" id="r-pos" style="padding-top:0;background:none"></div></div>
+  <div class="text"><div class="inner" id="r-inner">
+    <div class="kicker" id="r-kicker"></div>
+    <h1 id="r-title"></h1>
+    <div class="meta" id="r-meta"></div>
+    <div id="r-body"></div>
+    <div class="cta">OK &nbsp;Open full story on theverge.com</div>
+  </div></div>
+</div>
+
+<footer id="footer"></footer>
+
+<script>
+/* Written in ES5 on purpose: VIDAA browser engines vary by model and age. */
+(function () {
+  var SECTIONS = [
+    { id: 'latest', name: 'Latest' },
+    { id: 'gadgets', name: 'Gadgets' },
+    { id: 'reviews', name: 'Reviews' },
+    { id: 'science', name: 'Science' },
+    { id: 'entertainment', name: 'Entertainment' },
+    { id: 'ai', name: 'AI' },
+    { id: 'games', name: 'Games' },
+    { id: 'policy', name: 'Policy' }
+  ];
+  var COLS = 3;
+  var REFRESH_MS = 10 * 60 * 1000;
+
+  var KEY = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, ENTER: 13, RED: 403 };
+  // Back is 8 on Hisense/VIDAA; 27/461/10009 cover desktop and other TV browsers.
+  var BACK_KEYS = { 8: 1, 27: 1, 461: 1, 10009: 1 };
+
+  var state = { section: 0, items: [], index: 0, zone: 'grid', readerOpen: false, readerScroll: 0 };
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function ago(ts) {
+    if (!ts) return '';
+    var m = Math.round((Date.now() - ts) / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return m + 'm ago';
+    var h = Math.round(m / 60);
+    if (h < 24) return h + 'h ago';
+    var d = Math.round(h / 24);
+    return d + 'd ago';
+  }
+
+  /* ---------- state in the URL hash, so Back from an article restores position ---------- */
+  function saveHash() {
+    var h = '#s=' + SECTIONS[state.section].id + '&i=' + state.index + (state.readerOpen ? '&r=1' : '');
+    if (history.replaceState) history.replaceState(null, '', h); else location.hash = h;
+  }
+  function readHash() {
+    var out = {};
+    location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
+      var p = kv.split('=');
+      if (p[0]) out[p[0]] = decodeURIComponent(p[1] || '');
+    });
+    return out;
+  }
+
+  /* ---------- rendering ---------- */
+  function renderTabs() {
+    var tabs = $('tabs');
+    tabs.innerHTML = '';
+    SECTIONS.forEach(function (s, i) {
+      var t = el('div', 'tab');
+      t.appendChild(el('span', 'num', String(i + 1)));
+      t.appendChild(document.createTextNode(s.name));
+      if (i === state.section) t.className += ' active';
+      if (i === state.section && state.zone === 'tabs') t.className += ' focus';
+      tabs.appendChild(t);
+    });
+  }
+
+  function renderGrid() {
+    var grid = $('grid');
+    grid.innerHTML = '';
+    state.items.forEach(function (it, i) {
+      var c = el('div', 'card');
+      var th = el('div', 'thumb');
+      if (it.image) th.style.backgroundImage = 'url("' + it.image.replace(/"/g, '%22') + '")';
+      c.appendChild(th);
+      var info = el('div', 'info');
+      info.appendChild(el('div', 'kicker', (it.categories && it.categories[0]) || ''));
+      info.appendChild(el('h2', null, it.title));
+      info.appendChild(el('div', 'meta', [it.author, ago(it.ts)].filter(Boolean).join('  ·  ')));
+      c.appendChild(info);
+      grid.appendChild(c);
+    });
+    updateFocus();
+  }
+
+  function setStatus(msg) {
+    $('grid').innerHTML = '';
+    $('grid').appendChild(el('div', null, msg)).id = 'status';
+  }
+
+  function renderFooter() {
+    var f = $('footer');
+    var parts = state.readerOpen
+      ? [['▲ ▼', 'scroll'], ['◀ ▶', 'prev / next story'], ['OK', 'open full story'], ['BACK', 'close']]
+      : [['◀ ▶ ▲ ▼', 'move'], ['OK', 'read'], ['1–' + SECTIONS.length, 'sections'], ['RED', 'refresh']];
+    f.innerHTML = '';
+    parts.forEach(function (p, i) {
+      if (i) f.appendChild(el('span', 'sep', '|'));
+      f.appendChild(el('span', 'key', p[0]));
+      f.appendChild(document.createTextNode(' ' + p[1]));
+    });
+  }
+
+  function updateFocus() {
+    var cards = $('grid').children;
+    for (var i = 0; i < cards.length; i++) {
+      cards[i].className = 'card' + (state.zone === 'grid' && i === state.index ? ' focus' : '');
+    }
+    renderTabs();
+    // Keep the focused row visible by sliding the grid (no native scrolling needed).
+    var focused = cards[state.index];
+    var grid = $('grid');
+    if (state.zone === 'tabs' || !focused || !focused.offsetHeight) {
+      grid.style.transform = 'translateY(0)';
+      return;
+    }
+    var viewH = $('scroller').offsetHeight;
+    var top = focused.offsetTop, bottom = top + focused.offsetHeight;
+    var current = -(parseFloat((grid.style.transform || '').replace(/[^\d.\-]/g, '')) || 0);
+    var pad = viewH * 0.06;
+    if (bottom - current > viewH - pad) current = bottom - viewH + pad * 2;
+    if (top - current < 0) current = Math.max(0, top - pad);
+    grid.style.transform = 'translateY(' + (-current) + 'px)';
+  }
+
+  /* ---------- reader ---------- */
+  function openReader() {
+    var it = state.items[state.index];
+    if (!it) return;
+    state.readerOpen = true;
+    state.readerScroll = 0;
+    $('r-img').style.backgroundImage = it.image ? 'url("' + it.image.replace(/"/g, '%22') + '")' : '';
+    $('r-kicker').textContent = (it.categories || []).join('  ·  ');
+    $('r-title').textContent = it.title;
+    $('r-meta').textContent = [it.author, ago(it.ts)].filter(Boolean).join('  ·  ');
+    var body = $('r-body');
+    body.innerHTML = '';
+    var paras = it.body && it.body.length ? it.body : [it.summary];
+    paras.forEach(function (p) { body.appendChild(el('p', null, p)); });
+    $('r-pos').textContent = 'Story ' + (state.index + 1) + ' of ' + state.items.length + ' in ' + SECTIONS[state.section].name;
+    $('r-inner').style.transform = 'translateY(0)';
+    $('reader').className = 'open';
+    renderFooter();
+    saveHash();
+  }
+
+  function closeReader() {
+    state.readerOpen = false;
+    $('reader').className = '';
+    renderFooter();
+    updateFocus();
+    saveHash();
+  }
+
+  function scrollReader(dir) {
+    var inner = $('r-inner');
+    var maxScroll = Math.max(0, inner.offsetHeight - inner.parentNode.offsetHeight);
+    state.readerScroll = Math.min(maxScroll, Math.max(0, state.readerScroll + dir * window.innerHeight * 0.25));
+    inner.style.transform = 'translateY(' + (-state.readerScroll) + 'px)';
+  }
+
+  /* ---------- data ---------- */
+  var loadToken = 0;
+  function load(sectionIndex, keepIndex) {
+    state.section = sectionIndex;
+    renderTabs();
+    var token = ++loadToken;
+    if (!keepIndex) { state.index = 0; }
+    if (!state.items.length || !keepIndex) setStatus('Loading ' + SECTIONS[sectionIndex].name + '…');
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', 'feeds/' + SECTIONS[sectionIndex].id + '.json?t=' + Math.floor(Date.now() / 60000));
+    xhr.timeout = 15000;
+    xhr.onload = function () {
+      if (token !== loadToken) return;
+      try {
+        var data = JSON.parse(xhr.responseText);
+        if (xhr.status !== 200) throw new Error(data.error || ('HTTP ' + xhr.status));
+        state.items = data.items || [];
+        if (state.index >= state.items.length) state.index = Math.max(0, state.items.length - 1);
+        if (!state.items.length) setStatus('No stories right now.'); else renderGrid();
+        if (keepIndex === 'reader' && state.items.length) openReader();
+        saveHash();
+      } catch (e) {
+        setStatus('Couldn’t load headlines (' + e.message + '). Press RED to retry.');
+      }
+    };
+    xhr.onerror = xhr.ontimeout = function () {
+      if (token === loadToken) setStatus('Couldn’t reach the headlines server. Press RED to retry.');
+    };
+    xhr.send();
+  }
+
+  /* ---------- input ---------- */
+  function onKey(e) {
+    var k = e.keyCode;
+
+    if (BACK_KEYS[k]) {
+      if (state.readerOpen) { closeReader(); e.preventDefault(); }
+      else if (state.zone === 'tabs') { state.zone = 'grid'; updateFocus(); e.preventDefault(); }
+      else {
+        // VIDAA apps must close themselves on Back from the main screen.
+        e.preventDefault();
+        window.close();
+      }
+      return;
+    }
+
+    if (k >= 49 && k <= 48 + SECTIONS.length) {           // number keys pick a section
+      if (state.readerOpen) closeReader();
+      state.zone = 'grid';
+      load(k - 49);
+      e.preventDefault();
+      return;
+    }
+    if (k === KEY.RED || k === 82) {                      // RED button, or "r" on a keyboard
+      load(state.section, true);
+      e.preventDefault();
+      return;
+    }
+
+    if (state.readerOpen) {
+      if (k === KEY.UP) scrollReader(-1);
+      else if (k === KEY.DOWN) scrollReader(1);
+      else if (k === KEY.LEFT && state.index > 0) { state.index--; openReader(); }
+      else if (k === KEY.RIGHT && state.index < state.items.length - 1) { state.index++; openReader(); }
+      else if (k === KEY.ENTER) { saveHash(); location.href = state.items[state.index].link; }
+      else return;
+      e.preventDefault();
+      return;
+    }
+
+    if (state.zone === 'tabs') {
+      if (k === KEY.LEFT && state.section > 0) load(state.section - 1);
+      else if (k === KEY.RIGHT && state.section < SECTIONS.length - 1) load(state.section + 1);
+      else if (k === KEY.DOWN || k === KEY.ENTER) { state.zone = 'grid'; updateFocus(); }
+      else return;
+      e.preventDefault();
+      return;
+    }
+
+    var n = state.items.length, i = state.index;
+    if (k === KEY.LEFT) { if (i % COLS > 0) i--; }
+    else if (k === KEY.RIGHT) { if (i % COLS < COLS - 1 && i + 1 < n) i++; }
+    else if (k === KEY.UP) { if (i - COLS >= 0) i -= COLS; else { state.zone = 'tabs'; } }
+    else if (k === KEY.DOWN) { if (i + COLS < n) i += COLS; else if (Math.floor(i / COLS) < Math.floor((n - 1) / COLS)) i = n - 1; }
+    else if (k === KEY.ENTER) { openReader(); e.preventDefault(); return; }
+    else return;
+    state.index = i;
+    updateFocus();
+    saveHash();
+    e.preventDefault();
+  }
+
+  function tickClock() {
+    var d = new Date();
+    var h = d.getHours(), m = d.getMinutes();
+    $('clock').textContent = (h % 12 || 12) + ':' + (m < 10 ? '0' : '') + m + (h < 12 ? ' AM' : ' PM');
+  }
+
+  /* ---------- start ---------- */
+  document.addEventListener('keydown', onKey, false);
+  window.addEventListener('resize', updateFocus);
+  tickClock();
+  setInterval(tickClock, 15000);
+  setInterval(function () { if (!state.readerOpen) load(state.section, true); }, REFRESH_MS);
+  renderFooter();
+
+  var h = readHash();
+  var start = 0;
+  for (var s = 0; s < SECTIONS.length; s++) if (SECTIONS[s].id === h.s) start = s;
+  state.index = parseInt(h.i, 10) || 0;
+  load(start, h.r ? 'reader' : true);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,180 @@
+{
+ "section": "gadgets",
+ "items": [
+  {
+   "title": "The OnePlus 16 is the company’s most interesting phone in years",
+   "link": "https://www.theverge.com/tech/1009570/oneplus-16-specs-features-china",
+   "author": "Dominic Preston",
+   "ts": 1791810833000,
+   "categories": [
+    "Gadgets",
+    "Mobile",
+    "News"
+   ],
+   "summary": "Today the OnePlus 16 launched in China, the company's first flagship phone since quitting both the US and European markets this summer. As luck would have it, it also looks like the company's best phone in some time. Like most OnePlus phones, the 16 is positioned around performance, with a Snapdragon 8 Elite Extreme Gen […]",
+   "body": [
+    "Today the OnePlus 16 launched in China, the company's first flagship phone since quitting both the US and European markets this summer. As luck would have it, it also looks like the company's best phone in some time.",
+    "Like most OnePlus phones, the 16 is positioned around performance, with a Snapdragon 8 Elite Extreme Gen 6 chipset, and up to 1TB of storage and 16GB of RAM. That's backed up by an enormous 9,000mAh silicon-carbon battery, one of the biggest seen in any Android flagship yet. 100W wired and 50W wireless charging complete the power setup.",
+    "On the display front, the phone jumps to a 185Hz OLED panel for the first time. That'll no …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/oneplus-16.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "CMF’s first wireless speakers look like musical milk cartons",
+   "link": "https://www.theverge.com/tech/1008191/nothing-cmf-speaker-m-s-series-bluetooth-design-customize",
+   "author": "Andrew Liszewski",
+   "ts": 1791810000000,
+   "categories": [
+    "Audio",
+    "Gadgets",
+    "News"
+   ],
+   "summary": "The CMF Speaker Series are the first portable Bluetooth speakers from the budget-focused brand that Nothing created but is in the process of spinning off into an India-based standalone subsidiary. As with many of CMF's products, like the Headphone Pro that launched a year ago, the new speakers deliver affordability alongside unique designs and bright […]",
+   "body": [
+    "The CMF Speaker Series are the first portable Bluetooth speakers from the budget-focused brand that Nothing created but is in the process of spinning off into an India-based standalone subsidiary. As with many of CMF's products, like the Headphone Pro that launched a year ago, the new speakers deliver affordability alongside unique designs and bright color options that help them stand out from the competition. While the company doesn't directly cite a grocery store's dairy aisle as the inspiration for its latest hardware, it's hard not to look at these and immediately see electronic milk cartons.",
+    "There are two versions of the CMF Speaker Se …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/cmf1.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "The Fitbit Edge is for folks who don’t want to go totally screenless",
+   "link": "https://www.theverge.com/gadgets/1008410/fitbit-edge-price-battery-specs-fitness-tracker",
+   "author": "Victoria Song",
+   "ts": 1791810000000,
+   "categories": [
+    "Fitness",
+    "Gadgets",
+    "News"
+   ],
+   "summary": "The Fitbit Edge may not be Google's best-kept fitness-tracking secret, but as of today, its existence is official. The tracker sits smack-dab between the recently launched Fitbit Air and the more powerful Google Pixel Watch 5 in the company's current wearable lineup. Basically, if you have smartwatch fatigue but don't want to give up notifications, […]",
+   "body": [
+    "The Fitbit Edge may not be Google's best-kept fitness-tracking secret, but as of today, its existence is official.",
+    "The tracker sits smack-dab between the recently launched Fitbit Air and the more powerful Google Pixel Watch 5 in the company's current wearable lineup. Basically, if you have smartwatch fatigue but don't want to give up notifications, this is Google's answer to the aging Fitbit Charge 6.",
+    "Much of the Edge's specs were previously leaked, but the tracker has a 46 percent larger OLED display compared to the Charge 6, a physical side button, and is a smidge thicker at 11.5mm. It also sports a replaceable battery that gets about a …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/Active-Run.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "Microsoft’s new AI chip makes it less reliant on Nvidia’s GPUs",
+   "link": "https://www.theverge.com/news/1009465/microsoft-maia-300-chip-improvements-rollout",
+   "author": "Tom Warren",
+   "ts": 1791810000000,
+   "categories": [
+    "AI",
+    "Chips",
+    "Gadgets"
+   ],
+   "summary": "Microsoft is announcing its third-generation Maia in-house AI chip today, designed to be the \"primary AI inference system\" for Microsoft's products and services. Maia 300 not only improves the cost and efficiency of running AI workloads in the cloud, it's also more capable of handling the latest reasoning models and agentic tasks. Maia 300 will […]",
+   "body": [
+    "Microsoft is announcing its third-generation Maia in-house AI chip today, designed to be the \"primary AI inference system\" for Microsoft's products and services. Maia 300 not only improves the cost and efficiency of running AI workloads in the cloud, it's also more capable of handling the latest reasoning models and agentic tasks.",
+    "Maia 300 will start being rolled out to production in 2027, and it has been designed with efficiency in mind. \"We expect Maia 300 to deliver 40 percent more tokens per megawatt compared to leading GPU-based systems,\" says Scott Guthrie, executive vice president of Microsoft's cloud group. \"And in a full 96-acceler …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/Maia-300-prototype-chip-03.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "What to expect from Apple’s ‘Welcome Home’ event",
+   "link": "https://www.theverge.com/tech/1009317/apple-what-to-expect-welcome-home",
+   "author": "Terrence O’Brien",
+   "ts": 1791723600000,
+   "categories": [
+    "Apple",
+    "Apple Event 2026",
+    "Apple Rumors"
+   ],
+   "summary": "We are quickly coming up on Apple's \"Welcome Home\" launch event, where we expect a host of smart home-related announcements. We are expecting refreshes to Apple TV and HomePod Mini, as well as a brand new smart home hub. We could also see the debut of a new platform called homeOS, and some partner devices […]",
+   "body": [
+    "We are quickly coming up on Apple's \"Welcome Home\" launch event, where we expect a host of smart home-related announcements. We are expecting refreshes to Apple TV and HomePod Mini, as well as a brand new smart home hub. We could also see the debut of a new platform called homeOS, and some partner devices from LG.",
+    "What we probably won't be seeing is the long-rumored touchscreen MacBook, which Cupertino whisperer Mark Gurman says will debut later this month.",
+    "\"Welcome Home\" will officially kick off in New York on October 13th at 9AM ET. Here's more about what to expect.",
+    "Until now, Apple has primarily relied on the …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/appleevent.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "LG’s RGB LED TV is good for certain situations, but an OLED is better",
+   "link": "https://www.theverge.com/tech/1008957/lg-mrgb95b-rgb-led-tv-review",
+   "author": "John Higgins",
+   "ts": 1791637200000,
+   "categories": [
+    "Gadgets",
+    "LG",
+    "Reviews"
+   ],
+   "summary": "When it comes to TVs, the LG name has long been synonymous with OLEDs, continually leading Samsung and Sony as the top OLED manufacturer. But 2026 is all about RGB LED TVs. Almost every major company has released models with the new technology - including LG and its $3,600 75-inch Micro RGB evo MRGB95B that […]",
+   "body": [
+    "When it comes to TVs, the LG name has long been synonymous with OLEDs, continually leading Samsung and Sony as the top OLED manufacturer. But 2026 is all about RGB LED TVs. Almost every major company has released models with the new technology - including LG and its $3,600 75-inch Micro RGB evo MRGB95B that I've been testing. And while LG's RGB LED TV benefits from the brightness and color capability the technology provides, it has issues I couldn't overlook that its less expensive competitors don't.",
+    "The MRGB95B comes in three sizes, with the 75-inch being the smallest. It has four HDMI 2.1 ports, supports Dolby Vision - although not Dolby …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/268807_LG_MRGB95B_RGB_LED_TV_review_JHIGGINS_3.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "The techlash has gone Hollywood",
+   "link": "https://www.theverge.com/tech/1008836/social-reckoning-cupertino-techlash-installer",
+   "author": "David Pierce",
+   "ts": 1791633600000,
+   "categories": [
+    "Gadgets",
+    "Installer",
+    "Streaming"
+   ],
+   "summary": "Hi, friends! Welcome to Installer No. 147, your guide to the best and Verge-iest stuff in the world. (If you're new here, welcome, I missed you all, and also you can read all the old editions at the Installer homepage.) I'm back from parental leave! Part time, anyway. Thanks to everyone who sent well wishes […]",
+   "body": [
+    "Hi, friends! Welcome to Installer No. 147, your guide to the best and Verge-iest stuff in the world. (If you're new here, welcome, I missed you all, and also you can read all the old editions at the Installer homepage.)",
+    "I'm back from parental leave! Part time, anyway. Thanks to everyone who sent well wishes and tips for managing three kids. I need 'em all. This week, I've been reading about McMansions and data centers and sports cards and ICANN, trying to run my life on the Dell XPS Googlebook, testing a new and very purple Kindle, reinventing my whole note-taking system now that Google Docs can handle Markdown files, listening to episode …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/Installer-147.jpg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "My brief romance with an AI bird feeder",
+   "link": "https://www.theverge.com/gadgets/1007674/smart-bird-feeders-attact-pests-too",
+   "author": "Thomas Ricker",
+   "ts": 1791615600000,
+   "categories": [
+    "Gadgets",
+    "Reviews",
+    "Smart Home"
+   ],
+   "summary": "It started off promising enough. Dozens of tiny, colorful birds were drawn to my garden just a few weeks after I mounted a $350 $269 Kiwibit Bird Feeder 2 Pro. \"Looks like Great Tit!\" read the first AI-driven alert sent to my phone. \"Looks like Eurasian Blue Tit!\" read another. I chuckled, still waiting for […]",
+   "body": [
+    "It started off promising enough. Dozens of tiny, colorful birds were drawn to my garden just a few weeks after I mounted a $350 $269 Kiwibit Bird Feeder 2 Pro. \"Looks like Great Tit!\" read the first AI-driven alert sent to my phone. \"Looks like Eurasian Blue Tit!\" read another. I chuckled, still waiting for adulthood to kick in.",
+    "This went on for days. Hundreds of miniature tits came to snack on expensive sunflower seeds already husked. They'd skulk about in nearby trees before flittering in to grab a single seed to be safely enjoyed in the canopy above.",
+    "I took great delight in my new house guests. I admired them in crisp 4K HDR video recor …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/IMG_5464.jpeg?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "Nikon microscopic video competition winner disqualified for using generative AI",
+   "link": "https://www.theverge.com/ai-artificial-intelligence/1008930/nikon-small-world-in-motion-winner-ai",
+   "author": "Stevie Bonifield",
+   "ts": 1791569217000,
+   "categories": [
+    "AI",
+    "Cameras",
+    "Gadgets"
+   ],
+   "summary": "Nikon says the video that originally won first place in its Small World in Motion contest \"did not comply with the competition rules regarding generative AI.\" BBC reports that the original first place video from Dr. Ning Xu claimed to show \"tiny, hair-like structures called cilia moving in the airway of a child with the […]",
+   "body": [
+    "Nikon says the video that originally won first place in its Small World in Motion contest \"did not comply with the competition rules regarding generative AI.\" BBC reports that the original first place video from Dr. Ning Xu claimed to show \"tiny, hair-like structures called cilia moving in the airway of a child with the respiratory condition PCD.\" Nikon said last week that it was reviewing the video following skepticism online about its authenticity.",
+    "In a comment on LinkedIn, Dr. Xu admitted to using AI for the video: \"An unsupervised neural-network method was subsequently used for AI-assisted post-processing to distinguish and visualize f …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/nikon-small-world-in-motion-ning-xu.png?quality=90&strip=all&crop=0,0,100,100&w=960"
+  },
+  {
+   "title": "Google teases Fitbit Edge launch next week",
+   "link": "https://www.theverge.com/tech/1008918/google-fitbit-edge-launch-next-week",
+   "author": "Emma Roth",
+   "ts": 1791569155000,
+   "categories": [
+    "Fitness",
+    "Gadgets",
+    "Google"
+   ],
+   "summary": "It looks like Google is getting ready to take the wraps off its rumored Fitbit Edge next Monday. In a post on X, Google posted a picture of what appears to be the side of the fitness tracker, with the caption: \"Get an Edge on your health. 10.12.26.\" A trove of Fitbit Edge leaks has […]",
+   "body": [
+    "It looks like Google is getting ready to take the wraps off its rumored Fitbit Edge next Monday. In a post on X, Google posted a picture of what appears to be the side of the fitness tracker, with the caption: \"Get an Edge on your health. 10.12.26.\"",
+    "A trove of Fitbit Edge leaks has surfaced over the past couple of weeks. So far, details shared by Dealabs and Android Headlines suggest that the upcoming device could feature a 1.34-inch always-on OLED touchscreen, built-in GPS, and several other sensors, including an accelerometer, barometer, altimeter, and gyroscope. It may also come with optical sensors for measuring heart rate and blood oxy …"
+   ],
+   "image": "https://platform.theverge.com/wp-content/uploads/sites/2/2026/10/fitbit-edge.jpeg?quality=90&strip=all&crop=0,0,71.318894733819,62.485080718084&w=960"
+  }
+ ]
+}
