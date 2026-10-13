@@ -59,6 +59,10 @@ segments, audio, subtitles, initialization files and key URIs. It deliberately
 does not bypass CAPTCHA, login or DRM challenges. If the initial HTML contains
 no media URL, a Cloudflare Browser Run fallback executes the page and observes
 only media requests. It never takes screenshots or returns page content.
+Before using a browser, a bounded multi-hop resolver can follow server hashes,
+intermediary pages and redirects while preserving cookies and referrers. It can
+decode common Base64, hex/XOR and Hunter-packed player configuration without
+executing arbitrary page JavaScript.
 
 The real source is not required for development or automated testing. All
 repository tests use invented `.invalid` domains. Only the owner should enter

@@ -5,6 +5,10 @@ import {
   browserMediaKind,
   browserPlaybackHeaders,
   browserResourceKind,
+  decodeBase64Text,
+  decodeHexXor,
+  decodeHunterPacked,
+  extractEncodedMediaUrl,
   extractMediaUrl,
   fillTemplate,
   handleRequest,
@@ -81,6 +85,105 @@ test('Browser Run stores only playback-relevant request headers', () => {
     authorization: 'Bearer fake',
     'x-playback-token': 'fake',
   });
+});
+
+test('decodes bounded VidSrc-style Base64, XOR and Hunter values', () => {
+  const media = 'https://media.example.invalid/trailer/master.m3u8';
+  const encodedMedia = btoa(media);
+  assert.equal(decodeBase64Text(encodedMedia), media);
+  assert.equal(extractEncodedMediaUrl(`file:"${encodedMedia}"`, 'https://player.example.invalid/'), media);
+  assert.equal(
+    extractEncodedMediaUrl(`file:"//token.example.invalid/key=${encodedMedia}#2"`, 'https://player.example.invalid/'),
+    media,
+  );
+
+  const seed = 'synthetic-seed';
+  const hex = Array.from(media, (character, index) =>
+    (character.charCodeAt(0) ^ seed.charCodeAt(index % seed.length)).toString(16).padStart(2, '0')
+  ).join('');
+  assert.equal(decodeHexXor(hex, seed), media);
+
+  const hunterValue = Array.from(media, (character) => character.charCodeAt(0) + 'x').join('');
+  const packed = `escape(r))}("${hunterValue}",0,"0123456789x",0,10,0)`;
+  assert.equal(decodeHunterPacked(packed), media);
+});
+
+test('follows a synthetic server-hash, XOR, redirect and Base64 media chain', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const seed = 'fixture-key';
+  const redirectUrl = 'https://gate.invalid/step';
+  const encodedRedirect = Array.from(redirectUrl, (character, index) =>
+    (character.charCodeAt(0) ^ seed.charCodeAt(index % seed.length)).toString(16).padStart(2, '0')
+  ).join('');
+  const mediaUrl = 'https://media.invalid/trailer/master.m3u8';
+  const calls = [];
+
+  globalThis.fetch = async (input, init = {}) => {
+    const url = String(input);
+    const headers = new Headers(init.headers || {});
+    calls.push({ url, referer: headers.get('referer') || '' });
+
+    if (url === 'https://source.invalid/movie/123') {
+      return new Response('<div class="server" data-hash="fixture123">Primary</div>', {
+        headers: { 'Content-Type': 'text/html', 'Set-Cookie': 'entry=fake; Path=/; Secure' },
+      });
+    }
+    if (url === 'https://source.invalid/rcp/fixture123') return new Response('missing', { status: 404 });
+    if (url === 'https://rcp.source.invalid/rcp/fixture123') {
+      assert.equal(headers.get('referer'), 'https://source.invalid/movie/123');
+      assert.doesNotMatch(headers.get('cookie') || '', /entry=fake/);
+      return new Response(`<body data-i="${seed}"><div id="hidden" data-h="${encodedRedirect}"></div>`, {
+        headers: { 'Content-Type': 'text/html' },
+      });
+    }
+    if (url === redirectUrl) {
+      assert.equal(headers.get('referer'), 'https://rcp.source.invalid/rcp/fixture123');
+      return new Response(null, { status: 302, headers: { Location: 'https://player.invalid/watch' } });
+    }
+    if (url === 'https://player.invalid/watch') {
+      return new Response(`file:"${btoa(mediaUrl)}"; var pass_path = "//media.invalid/pass";`, {
+        headers: { 'Content-Type': 'text/html' },
+      });
+    }
+    if (url === 'https://media.invalid/pass') {
+      return new Response('ok', { headers: { 'Set-Cookie': 'play=fake; Path=/; Secure' } });
+    }
+    if (url === mediaUrl) {
+      assert.match(headers.get('cookie') || '', /play=fake/);
+      return new Response('#EXTM3U\n#EXTINF:4,\nsegment.ts', {
+        headers: { 'Content-Type': 'application/vnd.apple.mpegurl' },
+      });
+    }
+    if (url === 'https://media.invalid/trailer/segment.ts') {
+      return new Response(new Uint8Array([4, 5, 6]), { headers: { 'Content-Type': 'video/mp2t' } });
+    }
+    throw new Error('unexpected synthetic URL: ' + url);
+  };
+
+  const env = {
+    ACCESS_PATH: 'private_test_path_1234',
+    APP_ORIGIN: 'https://chigala.github.io',
+    PLAYBACK_TOKEN_SECRET: 'synthetic-secret-that-is-longer-than-thirty-two-characters',
+    TRAILER_URL_TEMPLATE: 'https://source.invalid/{type}/{tmdb}',
+  };
+  const headers = { Origin: env.APP_ORIGIN };
+  const resolved = await handleRequest(new Request(
+    'https://worker.example.invalid/' + env.ACCESS_PATH + '/resolve?type=movie&tmdb=123',
+    { headers },
+  ), env);
+  assert.equal(resolved.status, 200);
+  const data = await resolved.json();
+  assert.doesNotMatch(data.url, /media\.invalid/);
+  assert.ok(calls.some((call) => call.url === 'https://rcp.source.invalid/rcp/fixture123'));
+  assert.ok(calls.some((call) => call.url === 'https://media.invalid/pass'));
+
+  const manifest = await handleRequest(new Request(data.url, { headers }), env);
+  const manifestText = await manifest.text();
+  const segmentUrl = manifestText.split('\n').find((line) => line && line[0] !== '#');
+  const segment = await handleRequest(new Request(segmentUrl, { headers }), env);
+  assert.deepEqual(Array.from(new Uint8Array(await segment.arrayBuffer())), [4, 5, 6]);
 });
 
 test('resolves and proxies an HLS stream without exposing the upstream URL', async (t) => {

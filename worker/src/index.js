@@ -1,7 +1,10 @@
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 const TOKEN_TTL_SECONDS = 20 * 60;
 const UPSTREAM_AGENT = 'Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/537.36 Safari/537.36';
+const STATIC_RESOLVER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36';
 const BROWSER_TIMEOUT = Symbol('browser-timeout');
+const STATIC_RESOLVER_MAX_REQUESTS = 12;
+const STATIC_RESOLVER_MAX_MS = 14000;
 
 export default {
   async fetch(request, env) {
@@ -141,9 +144,437 @@ async function resolveMediaWithBrowserFallback(sourceUrl, env) {
     return await resolveMedia(sourceUrl, env);
   } catch (error) {
     if (errorCode(error, '') !== 'NO_PLAYABLE_MEDIA') throw error;
-    if (!env.BROWSER) throw codedError('BROWSER_RUN_NOT_CONFIGURED', 503);
-    return resolveMediaInBrowser(sourceUrl, env);
   }
+
+  try {
+    return await resolveMultiHopMedia(sourceUrl, env);
+  } catch (error) {
+    if (errorCode(error, '') !== 'NO_PLAYABLE_MEDIA') throw error;
+  }
+
+  if (!env.BROWSER) throw codedError('BROWSER_RUN_NOT_CONFIGURED', 503);
+  return resolveMediaInBrowser(sourceUrl, env);
+}
+
+async function resolveMultiHopMedia(sourceUrl, env) {
+  const deadline = Date.now() + STATIC_RESOLVER_MAX_MS;
+  const session = { cookies: [] };
+  const queue = [{ url: sourceUrl, referer: '', depth: 0 }];
+  const seen = new Set();
+  let requests = 0;
+
+  while (queue.length && requests < STATIC_RESOLVER_MAX_REQUESTS && Date.now() < deadline) {
+    const item = queue.shift();
+    if (!item || item.depth > 6 || seen.has(item.url)) continue;
+    seen.add(item.url);
+
+    let target;
+    try { target = assertSafeUpstreamUrl(item.url, env); } catch (_) { continue; }
+
+    let response;
+    try {
+      response = await fetchStaticHop(target.toString(), item.referer, session, env);
+      requests++;
+    } catch (_) {
+      requests++;
+      continue;
+    }
+
+    const responseUrl = response.url || target.toString();
+    const type = String(response.headers.get('content-type') || '').toLowerCase();
+    const responseKind = browserMediaKind(responseUrl, type);
+    if (responseKind) {
+      return staticMediaResult(responseUrl, responseKind, item.referer || sourceUrl, session);
+    }
+
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const location = response.headers.get('location');
+      const next = normalizeStaticUrl(location, responseUrl);
+      if (next) {
+        const kind = browserMediaKind(next, '');
+        if (kind) return staticMediaResult(next, kind, responseUrl, session);
+        queue.unshift({ url: next, referer: responseUrl, depth: item.depth + 1 });
+      }
+      continue;
+    }
+    if (!response.ok) continue;
+
+    const length = Number(response.headers.get('content-length') || 0);
+    if (length > MAX_TEXT_BYTES) continue;
+    let text;
+    try { text = await response.text(); } catch (_) { continue; }
+    if (new TextEncoder().encode(text).byteLength > MAX_TEXT_BYTES) continue;
+
+    const direct = extractMediaUrl(text, responseUrl) || extractEncodedMediaUrl(text, responseUrl);
+    if (direct) {
+      try { assertSafeUpstreamUrl(direct, env); } catch (_) { continue; }
+      await warmStaticPassPath(text, responseUrl, session, env, deadline);
+      return staticMediaResult(
+        direct,
+        /\.m3u8(?:[?#]|$)/i.test(direct) ? 'hls' : 'video',
+        responseUrl,
+        session,
+      );
+    }
+
+    const candidates = extractStaticHopCandidates(text, responseUrl);
+    for (const candidate of candidates) {
+      if (seen.has(candidate)) continue;
+      queue.push({ url: candidate, referer: responseUrl, depth: item.depth + 1 });
+    }
+  }
+
+  throw codedError('NO_PLAYABLE_MEDIA', 404);
+}
+
+async function fetchStaticHop(url, referer, session, env) {
+  assertSafeUpstreamUrl(url, env);
+  const headers = new Headers({
+    Accept: 'text/html,application/xhtml+xml,application/json,text/javascript,application/javascript,*/*;q=0.7',
+    'User-Agent': STATIC_RESOLVER_AGENT,
+  });
+  const cookie = staticCookieHeader(session.cookies, url);
+  if (cookie) headers.set('Cookie', cookie);
+  if (referer) headers.set('Referer', referer);
+  const options = { headers, redirect: 'manual' };
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    options.signal = AbortSignal.timeout(5000);
+  }
+  const response = await fetch(url, options);
+  absorbStaticCookies(response.headers, new URL(url), session.cookies);
+  return response;
+}
+
+function staticMediaResult(url, kind, referer, session) {
+  const headers = { referer, 'user-agent': STATIC_RESOLVER_AGENT };
+  try { headers.origin = new URL(referer).origin; } catch (_) {}
+  const cookie = staticCookieHeader(session.cookies, url);
+  if (cookie) headers.cookie = cookie;
+  return { url, kind, headers };
+}
+
+async function warmStaticPassPath(text, baseUrl, session, env, deadline) {
+  if (Date.now() >= deadline) return;
+  const match = String(text || '').match(/\bpass_path\s*=\s*["']([^"']+)["']/i);
+  const url = match ? normalizeStaticUrl(match[1], baseUrl) : '';
+  if (!url) return;
+  try { await fetchStaticHop(url, baseUrl, session, env); } catch (_) {}
+}
+
+function extractStaticHopCandidates(input, baseUrl) {
+  const text = decodePageEscapes(String(input || ''));
+  const priority = [];
+  const output = [];
+  const addTo = (list, value) => {
+    const url = normalizeStaticUrl(value, baseUrl);
+    if (url && !priority.includes(url) && !output.includes(url)) list.push(url);
+  };
+  const add = (value) => addTo(output, value);
+  const addPriority = (value) => addTo(priority, value);
+  let match;
+
+  const embedded = /<(?:iframe|source)[^>]+\bsrc\s*=\s*["']([^"']+)["']/gi;
+  while ((match = embedded.exec(text)) && output.length < 30) add(match[1]);
+
+  const dataLink = /\b(?:data-src|data-url|data-link|data-redirect)\s*=\s*["']([^"']+)["']/gi;
+  while ((match = dataLink.exec(text)) && output.length < 30) add(match[1]);
+
+  const assigned = /\b(?:url|src|source|redirect|location|endpoint)\s*[:=]\s*["']([^"']+)["']/gi;
+  while ((match = assigned.exec(text)) && output.length < 30) add(match[1]);
+
+  const scripts = /<script[^>]+\bsrc\s*=\s*["']([^"']+)["']/gi;
+  while ((match = scripts.exec(text)) && output.length < 30) {
+    if (/(?:player|embed|stream|source|rcp|api)/i.test(match[1])) add(match[1]);
+  }
+
+  const hashes = [];
+  const hashPattern = /\bdata-hash\s*=\s*["']([^"']{2,512})["']/gi;
+  while ((match = hashPattern.exec(text)) && hashes.length < 8) hashes.push(match[1]);
+  for (const hash of hashes) {
+    if (/^https?:\/\//i.test(hash) || hash.startsWith('//')) {
+      addPriority(hash);
+      continue;
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(hash)) continue;
+    try {
+      const base = new URL(baseUrl);
+      const root = registrableHostGuess(base.hostname);
+      if (root && base.hostname !== 'rcp.' + root) addPriority('https://rcp.' + root + '/rcp/' + hash);
+      addPriority('/rcp/' + hash);
+      const withoutWww = base.hostname.replace(/^www\./i, '');
+      if (withoutWww && withoutWww !== root && !withoutWww.startsWith('rcp.')) {
+        addPriority('https://rcp.' + withoutWww + '/rcp/' + hash);
+      }
+    } catch (_) {}
+  }
+
+  const encodedValues = [];
+  const seeds = [];
+  const encodedPattern = /\bdata-h(?!ash)\s*=\s*["']([0-9a-f]+)["']/gi;
+  const seedPattern = /\bdata-i\s*=\s*["']([^"']{1,512})["']/gi;
+  while ((match = encodedPattern.exec(text)) && encodedValues.length < 4) encodedValues.push(match[1]);
+  while ((match = seedPattern.exec(text)) && seeds.length < 4) seeds.push(match[1]);
+  for (const encoded of encodedValues) {
+    for (const seed of seeds) {
+      const decoded = decodeHexXor(encoded, seed);
+      for (const url of staticUrlsFromValue(decoded, baseUrl)) addPriority(url);
+    }
+  }
+
+  const hunter = decodeHunterPacked(text);
+  if (hunter) for (const url of staticUrlsFromValue(hunter, baseUrl)) addPriority(url);
+  for (const decoded of decodeEmbeddedStrings(text)) {
+    for (const url of staticUrlsFromValue(decoded, baseUrl)) addPriority(url);
+  }
+  return priority.concat(output).slice(0, 30);
+}
+
+export function extractEncodedMediaUrl(input, baseUrl) {
+  const values = decodeEmbeddedStrings(input);
+  const hunter = decodeHunterPacked(input);
+  if (hunter) values.unshift(hunter);
+  for (const value of values) {
+    const media = extractMediaUrl(value, baseUrl);
+    if (media) return media;
+    const url = normalizeStaticUrl(value.trim(), baseUrl);
+    if (url && browserMediaKind(url, '')) return url;
+  }
+  return '';
+}
+
+function staticUrlsFromValue(value, baseUrl) {
+  const text = decodePageEscapes(String(value || '')).trim();
+  const output = [];
+  const add = (candidate) => {
+    const url = normalizeStaticUrl(candidate, baseUrl);
+    if (url && !output.includes(url)) output.push(url);
+  };
+  if (/^(?:https?:)?\/\//i.test(text) || /^(?:\.\.\/|\.\/|\/)/.test(text)) add(text);
+  let match;
+  const absolute = /https?:\/\/[^"'\s<>\\]+/gi;
+  while ((match = absolute.exec(text)) && output.length < 12) add(match[0]);
+  const assigned = /\b(?:file|url|src|source|redirect|location)\s*[:=]\s*["']([^"']+)["']/gi;
+  while ((match = assigned.exec(text)) && output.length < 12) add(match[1]);
+  return output;
+}
+
+function normalizeStaticUrl(value, baseUrl) {
+  if (!value) return '';
+  let input = decodePageEscapes(String(value)).trim().replace(/&amp;/gi, '&');
+  input = input.replace(/^['"]|['"]$/g, '').replace(/[),;]+$/, '');
+  if (!input || /^(?:javascript|data|blob):/i.test(input)) return '';
+  try {
+    const url = new URL(input, baseUrl);
+    return url.protocol === 'https:' && !url.username && !url.password ? url.toString() : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function registrableHostGuess(hostname) {
+  const host = String(hostname || '').toLowerCase();
+  if (!host || host.includes(':') || /^\d+(?:\.\d+){3}$/.test(host)) return '';
+  const parts = host.split('.').filter(Boolean);
+  if (parts.length < 2) return '';
+  const multipart = parts[parts.length - 1].length === 2 && /^(?:ac|co|com|edu|gov|net|org)$/.test(parts[parts.length - 2]);
+  return parts.slice(multipart && parts.length >= 3 ? -3 : -2).join('.');
+}
+
+function decodeEmbeddedStrings(input) {
+  const text = decodePageEscapes(String(input || ''));
+  const encoded = [];
+  let match;
+  const fields = /\b(?:file|src|source|url|hls|playlist|manifest)\s*[:=]\s*["']([^"']{12,16384})["']/gi;
+  while ((match = fields.exec(text)) && encoded.length < 40) encoded.push(match[1]);
+  const quoted = /["']([a-zA-Z0-9+/_=-]{20,16384}(?:#2)?)["']/g;
+  while ((match = quoted.exec(text)) && encoded.length < 40) encoded.push(match[1]);
+  const tokens = /(?:^|[^a-zA-Z0-9+/_-])([a-zA-Z0-9+/_-]{32,8192}={0,2})(?=$|[^a-zA-Z0-9+/_=-])/g;
+  while ((match = tokens.exec(text)) && encoded.length < 40) encoded.push(match[1]);
+
+  const output = [];
+  for (const original of encoded) {
+    const variants = [original.replace(/#2/gi, '')];
+    const prefixed = original.match(/^\/\/[^=]{1,128}=(.+)$/);
+    if (prefixed) variants.push(prefixed[1].replace(/#2/gi, ''));
+    for (const variant of variants) {
+      let current = variant;
+      for (let depth = 0; depth < 3; depth++) {
+        const decoded = decodeBase64Text(current);
+        if (!decoded || output.includes(decoded)) break;
+        output.push(decoded);
+        current = decoded.trim();
+      }
+    }
+  }
+  return output;
+}
+
+export function decodeBase64Text(value) {
+  let input = String(value || '').trim().replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+  if (input.length < 12 || input.length > 16384 || !/^[a-zA-Z0-9+/]+={0,2}$/.test(input)) return '';
+  input += '='.repeat((4 - input.length % 4) % 4);
+  try {
+    const binary = atob(input);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    const decoded = new TextDecoder().decode(bytes);
+    let printable = 0;
+    for (const character of decoded) {
+      const code = character.charCodeAt(0);
+      if (code === 9 || code === 10 || code === 13 || code >= 32) printable++;
+    }
+    return decoded && printable / decoded.length >= 0.85 ? decoded : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+export function decodeHexXor(encoded, seed) {
+  const hex = String(encoded || '');
+  const key = String(seed || '');
+  if (!key || key.length > 512 || !/^(?:[0-9a-f]{2})+$/i.test(hex) || hex.length > 32768) return '';
+  let output = '';
+  for (let index = 0; index < hex.length; index += 2) {
+    output += String.fromCharCode(parseInt(hex.slice(index, index + 2), 16) ^ key.charCodeAt((index / 2) % key.length));
+  }
+  return output;
+}
+
+export function decodeHunterPacked(input) {
+  const text = String(input || '');
+  const expression = /escape\s*\(\s*r\s*\)\s*\)\s*\}\s*\(\s*([\s\S]{1,131072}?)\s*\)/g;
+  let match;
+  while ((match = expression.exec(text))) {
+    const args = parsePackedArguments(match[1]);
+    if (args.length !== 6) continue;
+    const decoded = hunterDecode(args[0], args[1], args[2], args[3], args[4], args[5]);
+    if (decoded) return decoded;
+  }
+  return '';
+}
+
+function parsePackedArguments(input) {
+  const pieces = [];
+  let token = '';
+  let quote = '';
+  let escaped = false;
+  for (const character of String(input || '')) {
+    if (escaped) { token += character; escaped = false; continue; }
+    if (quote && character === '\\') { token += character; escaped = true; continue; }
+    if (quote) {
+      token += character;
+      if (character === quote) quote = '';
+      continue;
+    }
+    if (character === '"' || character === "'") { quote = character; token += character; continue; }
+    if (character === ',') { pieces.push(token.trim()); token = ''; continue; }
+    token += character;
+  }
+  pieces.push(token.trim());
+  if (pieces.length !== 6) return [];
+  return pieces.map((piece) => {
+    if (/^-?\d+$/.test(piece)) return Number(piece);
+    if ((piece[0] === '"' && piece[piece.length - 1] === '"') || (piece[0] === "'" && piece[piece.length - 1] === "'")) {
+      return decodePackedString(piece.slice(1, -1));
+    }
+    return piece;
+  });
+}
+
+function decodePackedString(value) {
+  return String(value || '')
+    .replace(/\\x([0-9a-f]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/\\u([0-9a-f]{4})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/\\([\\'"/])/g, '$1');
+}
+
+function hunterDecode(h, _u, n, t, e, _r) {
+  h = String(h || '');
+  n = String(n || '');
+  t = Number(t);
+  e = Number(e);
+  if (!h || !n || !Number.isInteger(t) || !Number.isInteger(e) || e < 2 || e > 62 || n.length <= e || h.length > 131072) return '';
+  const delimiter = n[e];
+  let output = '';
+  for (const chunk of h.split(delimiter)) {
+    if (!chunk) continue;
+    let numeric = chunk;
+    for (let index = 0; index < n.length; index++) numeric = numeric.split(n[index]).join(String(index));
+    const code = hunterNumber(numeric, e, 10) - t;
+    if (!Number.isInteger(code) || code < 0 || code > 65535) return '';
+    output += String.fromCharCode(code);
+    if (output.length > MAX_TEXT_BYTES) return '';
+  }
+  return output;
+}
+
+function hunterNumber(value, fromBase, toBase) {
+  const alphabet = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/';
+  const source = alphabet.slice(0, fromBase);
+  const target = alphabet.slice(0, toBase);
+  let number = 0;
+  const reversed = String(value || '').split('').reverse();
+  for (let index = 0; index < reversed.length; index++) {
+    const position = source.indexOf(reversed[index]);
+    if (position >= 0) number += position * fromBase ** index;
+  }
+  let converted = '';
+  while (number > 0) {
+    converted = target[number % toBase] + converted;
+    number = Math.floor(number / toBase);
+  }
+  return Number.parseInt(converted, 10) || 0;
+}
+
+function absorbStaticCookies(headers, requestUrl, jar) {
+  let values = [];
+  if (typeof headers.getSetCookie === 'function') values = headers.getSetCookie();
+  else if (typeof headers.getAll === 'function') values = headers.getAll('Set-Cookie');
+  else if (headers.get('set-cookie')) values = splitSetCookie(headers.get('set-cookie'));
+
+  for (const value of values.slice(0, 30)) {
+    const parts = String(value).split(';');
+    const first = parts.shift() || '';
+    const equal = first.indexOf('=');
+    if (equal <= 0) continue;
+    const cookie = {
+      name: first.slice(0, equal).trim(),
+      value: first.slice(equal + 1).trim(),
+      domain: requestUrl.hostname.toLowerCase(),
+      hostOnly: true,
+      path: '/',
+      secure: false,
+    };
+    let remove = false;
+    for (const attribute of parts) {
+      const separator = attribute.indexOf('=');
+      const name = (separator < 0 ? attribute : attribute.slice(0, separator)).trim().toLowerCase();
+      const content = separator < 0 ? '' : attribute.slice(separator + 1).trim();
+      if (name === 'domain') {
+        const domain = content.toLowerCase().replace(/^\./, '');
+        if (domain && (requestUrl.hostname === domain || requestUrl.hostname.endsWith('.' + domain))) {
+          cookie.domain = domain;
+          cookie.hostOnly = false;
+        }
+      } else if (name === 'path' && content.startsWith('/')) cookie.path = content;
+      else if (name === 'secure') cookie.secure = true;
+      else if (name === 'max-age' && Number(content) <= 0) remove = true;
+      else if (name === 'expires' && Number.isFinite(Date.parse(content)) && Date.parse(content) <= Date.now()) remove = true;
+    }
+    const matches = (item) => item.name === cookie.name && item.domain === cookie.domain && item.path === cookie.path;
+    for (let index = jar.length - 1; index >= 0; index--) if (matches(jar[index])) jar.splice(index, 1);
+    if (!remove && cookie.name && cookie.name.length <= 256 && cookie.value.length <= 8192) jar.push(cookie);
+    if (jar.length > 50) jar.splice(0, jar.length - 50);
+  }
+}
+
+function staticCookieHeader(jar, value) {
+  let url;
+  try { url = new URL(value); } catch (_) { return ''; }
+  const host = url.hostname.toLowerCase();
+  return jar.filter((cookie) => {
+    const domain = cookie.hostOnly ? host === cookie.domain : (host === cookie.domain || host.endsWith('.' + cookie.domain));
+    return domain && url.pathname.startsWith(cookie.path) && (!cookie.secure || url.protocol === 'https:');
+  }).map((cookie) => cookie.name + '=' + cookie.value).join('; ');
 }
 
 async function resolveMediaInBrowser(sourceUrl, env) {
