@@ -285,10 +285,10 @@
 </div>
 
 <div id="webs" class="screen">
-  <iframe id="web-frame" title="Trailer webpage" tabindex="0" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen></iframe>
+  <iframe id="web-frame" title="Trailer webpage" tabindex="-1" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen></iframe>
   <div class="ov" id="web-ov">
     <div class="ttl" id="web-title"></div>
-    <div class="keys" id="web-help"><span class="key">OK</span>control player<span class="key">▼</span>full-page mode<span class="key">BACK</span>close</div>
+    <div class="keys" id="web-help"><span class="key">OK</span>play/pause<span class="key">◀ ▶</span>seek<span class="key">▼</span>fullscreen<span class="key">BACK</span>close</div>
   </div>
 </div>
 
@@ -1181,7 +1181,9 @@
   }
 
   /* ================= trailer web page ================= */
-  var webOvT, webWaitT, webBaseUrl = '', webOrigin = '', webProgress = 0, webProgressKey = '';
+  var webOvT, webWaitT, webStatusT, webBaseUrl = '', webOrigin = '', webProgress = 0,
+      webDuration = 0, webPaused = true, webApiReady = false, webProgressKey = '',
+      webLastSavedAt = 0, webSeekStep = 10, webLastSeek = 0;
   function webUrlAt(url, seconds) {
     if (!seconds || seconds < 5) return url;
     var hash = '', at = url.indexOf('#');
@@ -1201,9 +1203,26 @@
     if (!webProgressKey || !webProgress) return;
     try { localStorage.setItem(webProgressKey, String(webProgress)); } catch (e) {}
   }
-  function focusWebPlayer() {
-    $('web-ov').className = 'ov off';
-    try { $('web-frame').focus(); $('web-frame').contentWindow.focus(); } catch (e) {}
+  function keepWebControls() {
+    // The parent must retain focus so every remote key can be translated into
+    // a player command. Focusing a cross-origin iframe loses the next keydown.
+    try { $('web-frame').blur(); window.focus(); } catch (e) {}
+  }
+  function postWebCommand(action, fields) {
+    var message = { action: action }, name;
+    if (fields) for (name in fields) if (fields.hasOwnProperty(name)) message[name] = fields[name];
+    try {
+      // The documented API uses "*" because an embed may finish on a player
+      // origin different from the public page URL. Commands contain no secrets.
+      $('web-frame').contentWindow.postMessage(message, '*');
+      keepWebControls();
+      return true;
+    } catch (e) { return false; }
+  }
+  function pokeWebOverlay() {
+    $('web-ov').className = 'ov';
+    clearTimeout(webOvT);
+    webOvT = setTimeout(function () { if (!webPaused) $('web-ov').className = 'ov off'; }, 3500);
   }
   function playWebPage(url, title, d) {
     overlayFrom = screen;
@@ -1211,24 +1230,32 @@
     webOrigin = webOriginOf(url);
     webProgressKey = 'verge-progress-' + (d.imdb || d.tm || d.t);
     webProgress = readWebProgress();
+    webDuration = 0;
+    webPaused = true;
+    webApiReady = false;
+    webLastSavedAt = 0;
+    webSeekStep = 10;
+    webLastSeek = 0;
     $('web-title').textContent = title;
-    $('web-help').innerHTML = '<span class="key">OK</span>control player<span class="key">▼</span>full-page mode<span class="key">BACK</span>close';
+    $('web-help').innerHTML = '<span class="key">OK</span>play/pause<span class="key">◀ ▶</span>seek<span class="key">▼</span>fullscreen<span class="key">BACK</span>close';
     $('web-ov').className = 'ov';
     $('web-frame').src = webUrlAt(url, webProgress);
     show('webs');
-    window.focus();
+    keepWebControls();
     clearTimeout(webOvT);
     clearTimeout(webWaitT);
+    clearTimeout(webStatusT);
     webOvT = setTimeout(function () { $('web-ov').className = 'ov off'; }, 4500);
     webWaitT = setTimeout(function () {
       if (screen !== 'webs') return;
-      $('web-help').innerHTML = '<span class="key">OK</span>focus player, then press OK again<span class="key">▼</span>full-page mode<span class="key">BACK</span>close';
+      if (!webApiReady) $('web-help').innerHTML = '<span class="key">OK</span>play/pause<span class="key">◀ ▶</span>seek<span class="key">▼</span>fullscreen<span class="key">BACK</span>close';
       $('web-ov').className = 'ov';
     }, 7000);
   }
   function closeWebPage() {
     clearTimeout(webOvT);
     clearTimeout(webWaitT);
+    clearTimeout(webStatusT);
     saveWebProgress();
     $('web-frame').src = 'about:blank';
     if (screen === 'webs') show(overlayFrom);
@@ -1258,23 +1285,83 @@
   }
   function webKey(k) {
     if (k === K.STOP) { closeWebPage(); return true; }
-    if (k === K.DOWN) { fullPageWebPlayer(); return true; }
-    focusWebPlayer();
+    if (k === K.OK || k === K.SPACE || k === K.PLAYPAUSE) postWebCommand('togglePlay');
+    else if (k === K.PLAY) postWebCommand('play');
+    else if (k === K.PAUSE) postWebCommand('pause');
+    else if (k === K.DOWN) postWebCommand('enterFullscreen');
+    else if (k === K.LEFT || k === K.RIGHT || k === K.REW || k === K.FF) {
+      var now = Date.now();
+      webSeekStep = now - webLastSeek < 400 ? Math.min(60, webSeekStep < 30 ? 30 : 60) : 10;
+      webLastSeek = now;
+      var direction = (k === K.LEFT || k === K.REW) ? -1 : 1;
+      webProgress = Math.max(0, webProgress + direction * webSeekStep);
+      if (webDuration) webProgress = Math.min(webDuration - 1, webProgress);
+      postWebCommand('seek', { time: webProgress });
+    }
+    else if (k === K.UP) postWebCommand('getStatus');
+    else return false;
+    pokeWebOverlay();
     return true;
   }
+  $('web-frame').addEventListener('load', function () {
+    if (screen !== 'webs' || $('web-frame').src === 'about:blank') return;
+    keepWebControls();
+    // Ask twice because some embeds attach their message listener just after load.
+    webStatusT = setTimeout(function () {
+      if (screen === 'webs') postWebCommand('getStatus');
+    }, 250);
+    setTimeout(function () {
+      if (screen === 'webs' && !webApiReady) postWebCommand('getStatus');
+    }, 1200);
+  }, false);
   window.addEventListener('message', function (event) {
     if (screen !== 'webs' || (event.source && event.source !== $('web-frame').contentWindow)) return;
-    if (webOrigin && event.origin && event.origin !== webOrigin) return;
     var message = event.data;
     if (typeof message === 'string') { try { message = JSON.parse(message); } catch (e) { return; } }
-    if (!message || message.type !== 'PLAYER_EVENT' || !message.data) return;
+    if (!message) return;
+    // The tagged API may come from a redirected player origin. event.source
+    // still proves that the message came from this exact iframe window.
+    if (message.source === 'moviesapi-player' && message.event) {
+      webApiReady = true;
+      clearTimeout(webWaitT);
+      if (typeof message.currentTime === 'number') webProgress = message.currentTime;
+      if (typeof message.duration === 'number') webDuration = message.duration;
+      if (message.event === 'play') {
+        webPaused = false;
+        $('web-ov').className = 'ov off';
+      } else if (message.event === 'pause') {
+        webPaused = true;
+        saveWebProgress();
+        pokeWebOverlay();
+      } else if (message.event === 'seeked') {
+        saveWebProgress();
+      } else if (message.event === 'timeupdate') {
+        if (Date.now() - webLastSavedAt > 5000) {
+          webLastSavedAt = Date.now();
+          saveWebProgress();
+        }
+      } else if (message.event === 'playerstatus') {
+        webPaused = !!message.paused;
+      } else if (message.event === 'ended') {
+        try { localStorage.removeItem(webProgressKey); } catch (e2) {}
+        webProgress = 0;
+        closeWebPage();
+      }
+      keepWebControls();
+      return;
+    }
+    if (webOrigin && event.origin && event.origin !== webOrigin) return;
+    if (message.type !== 'PLAYER_EVENT' || !message.data) return;
     var data = message.data, status = data.player_status;
     if (typeof data.player_progress === 'number') webProgress = data.player_progress;
     if (status === 'playing' || status === 'paused' || status === 'seeked') saveWebProgress();
     if (status === 'playing') {
+      webPaused = false;
       clearTimeout(webWaitT);
       $('web-ov').className = 'ov off';
-      focusWebPlayer();
+    } else if (status === 'paused') {
+      webPaused = true;
+      pokeWebOverlay();
     } else if (status === 'completed') {
       try { localStorage.removeItem(webProgressKey); } catch (e2) {}
       webProgress = 0;
