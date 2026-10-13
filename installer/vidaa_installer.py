@@ -151,6 +151,16 @@ def make_handler(page_bytes):
                 msg = parse_qs(url.query).get("m", [""])[0]
                 log("  TV   " + msg[:500])
                 self._send(204, b"", "text/plain")
+            elif url.path == "/original-appinfo":
+                # The OLDEST app-list backup, i.e. the TV's list before we changed anything.
+                backups = sorted(f for f in os.listdir(BACKUP_DIR) if f.startswith("appinfo-backup-")) \
+                    if os.path.isdir(BACKUP_DIR) else []
+                if not backups:
+                    self._send(404, b"No backup yet", "text/plain")
+                    return
+                with open(os.path.join(BACKUP_DIR, backups[0]), "rb") as f:
+                    log("  WEB  TV fetched original backup %s" % backups[0])
+                    self._send(200, f.read(), "text/plain; charset=utf-8")
             elif url.path in ("/", "/index.html"):
                 log("  WEB  %s opened the install page" % self.client_address[0])
                 self._send(200, page_bytes, "text/html; charset=utf-8")

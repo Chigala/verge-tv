@@ -32,7 +32,8 @@ You need: the TV and computer on the same network, and a TV that lets you set DN
 2. On the TV: Settings → Network → Network Configuration → your connection →
    IP/DNS settings → Manual. Set **DNS 1** to the IP it printed. Save.
 3. Open the TV's **Browser** and go to `https://vidaahub.com`. Accept the certificate warning.
-4. Press **Install**. Wait for "installed".
+4. Press **Install (new)** (VIDAA 9 and newer) or **Install (old)** (older TVs). Wait for "installed".
+   **Check apps** shows whether the TV really lists it; **Restore** puts back the TV's original custom app list (backed up in `installer/backups/`).
 5. Set the TV's DNS back to **automatic**, then restart the TV.
 6. Press Ctrl+C in the installer window.
 

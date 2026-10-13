@@ -27,7 +27,7 @@
 </head>
 <body>
   <h1>VIDAA App Installer</h1>
-  <div class="sub">Running from your computer. Use ◀ ▶ to choose and OK to press.</div>
+  <div class="sub">Running from your computer. Use ◀ ▶ to choose and OK to press. On newer TVs use Install (new).</div>
 
   <div class="app">
     <img id="icon" alt="">
@@ -35,7 +35,9 @@
   </div>
 
   <div class="buttons" id="buttons">
-    <div class="btn primary" data-act="install">Install</div>
+    <div class="btn primary" data-act="installNew">Install (new)</div>
+    <div class="btn" data-act="restore">Restore</div>
+    <div class="btn" data-act="install">Install (old)</div>
     <div class="btn" data-act="uninstall">Uninstall</div>
     <div class="btn" data-act="info">TV info</div>
     <div class="btn" data-act="diagnose">Diagnose</div>
@@ -50,6 +52,7 @@
 (function () {
   var APP = __APP_JSON__;
   var focus = 0;
+  var APPINFO_PATH = 'websdk/Appinfo.json';
   var buttons = document.getElementById('buttons').children;
 
   document.getElementById('icon').src = APP.icon;
@@ -123,12 +126,70 @@
       } catch (e) { say('Uninstall failed: ' + e, 'err'); }
     },
     // Read-only: looks for the newer install route and backs up the TV's app list to the computer.
+    // Newer firmware (VIDAA U9+): add the app straight to the TV's custom app list,
+    // the same way github.com/weinzii/vidaa-edge does. Existing entries are kept.
+    installNew: function () {
+      var req = window.HiUtils_createRequest;
+      if (typeof req !== 'function') return say('HiUtils_createRequest not available on this TV.', 'err');
+      say('Installing ' + APP.name + ' (new method)…');
+      try {
+        var cur = req('fileRead', { path: APPINFO_PATH, mode: 6 });
+        var text = cur && cur.ret ? cur.msg : '{"AppInfo":[]}';
+        var data;
+        try { data = JSON.parse(text); } catch (e) { return say('App list is not valid JSON; not touching it.', 'err'); }
+        if (!data || Object.prototype.toString.call(data.AppInfo) !== '[object Array]') return say('Unexpected app list format; not touching it.', 'err');
+        save('appinfo-backup', text);  // fresh backup right before writing
+
+        var d = new Date();
+        var entry = {
+          Id: APP.id, AppName: APP.name, Title: APP.name,
+          URL: APP.url, StartCommand: APP.url,
+          IconURL: APP.icon, Icon_96: APP.icon, Image: APP.icon, Thumb: APP.icon,
+          Type: 'Browser',
+          InstallTime: d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(),
+          RunTimes: 0, StoreType: 'custom', PreInstall: false
+        };
+        var replaced = false;
+        for (var i = 0; i < data.AppInfo.length; i++) {
+          if (data.AppInfo[i].Id === entry.Id) { data.AppInfo[i] = entry; replaced = true; }
+        }
+        if (!replaced) data.AppInfo.push(entry);
+
+        var res = req('fileWrite', { path: APPINFO_PATH, mode: 6, writedata: JSON.stringify(data) });
+        report('raw fileWrite: ' + JSON.stringify(res));
+        if (!res || !res.ret) return say('Writing the app list failed: ' + (res && res.msg), 'err');
+
+        var back = req('fileRead', { path: APPINFO_PATH, mode: 6 });
+        var ok = back && back.ret && back.msg.indexOf(APP.url) !== -1;
+        say(ok ? 'Saved to the TV app list (' + data.AppInfo.length + ' entries) ✓' : 'Write reported OK but the entry is missing on read-back.', ok ? 'ok' : 'err');
+        refreshApps(APP.id);
+        if (ok) say('Now set DNS back to DHCP, unplug the TV for 10 seconds, and look in your apps.', 'ok');
+      } catch (e) { say('Install (new) failed: ' + e, 'err'); }
+    },
+    // Puts back the TV's app list exactly as it was before the first change.
+    restore: function () {
+      var req = window.HiUtils_createRequest;
+      if (typeof req !== 'function') return say('HiUtils_createRequest not available on this TV.', 'err');
+      say('Fetching the original backup from your computer…');
+      var x = new XMLHttpRequest();
+      x.open('GET', '/original-appinfo');
+      x.onload = function () {
+        if (x.status !== 200) return say('No backup found on the computer.', 'err');
+        try { JSON.parse(x.responseText); } catch (e) { return say('Backup is not valid JSON; not restoring.', 'err'); }
+        var res = req('fileWrite', { path: APPINFO_PATH, mode: 6, writedata: x.responseText });
+        report('raw restore fileWrite: ' + JSON.stringify(res));
+        if (res && res.ret) { say('Original app list restored ✓', 'ok'); refreshApps(); }
+        else say('Restore failed: ' + (res && res.msg), 'err');
+      };
+      x.onerror = function () { say('Could not reach the computer.', 'err'); };
+      x.send();
+    },
     check: function () {
       say('Checking installed apps (read-only, nothing is changed)…');
       if (typeof window.HiUtils_createRequest === 'function') {
         say('HiUtils_createRequest found ✓ (newer install method is possible)', 'ok');
         try {
-          var cur = window.HiUtils_createRequest('fileRead', { path: 'websdk/Appinfo.json', mode: 6 });
+          var cur = window.HiUtils_createRequest('fileRead', { path: APPINFO_PATH, mode: 6 });
           report('raw fileRead ret: ' + JSON.stringify(cur && cur.ret));
           if (cur && cur.ret) {
             save('appinfo-backup', cur.msg);
@@ -149,6 +210,8 @@
             say('getInstalledApps replied (saved to your computer).', 'ok');
           });
           if (direct !== undefined) {
+            var dtext = typeof direct === 'string' ? direct : JSON.stringify(direct);
+            say(APP.name + (dtext.indexOf(APP.url) !== -1 ? ' IS in the TV app list ✓' : ' is not in the TV app list yet.'), dtext.indexOf(APP.url) !== -1 ? 'ok' : 'err');
             save('installed-apps-direct', typeof direct === 'string' ? direct : JSON.stringify(direct));
             say('getInstalledApps returned data (saved to your computer).', 'ok');
           }
