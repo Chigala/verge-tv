@@ -38,6 +38,7 @@
     <div class="btn primary" data-act="install">Install</div>
     <div class="btn" data-act="uninstall">Uninstall</div>
     <div class="btn" data-act="info">TV info</div>
+    <div class="btn" data-act="diagnose">Diagnose</div>
   </div>
 
   <div id="out"></div>
@@ -94,6 +95,7 @@
       try {
         // Callback: a truthy status means it FAILED (undocumented API; matches vidaa-appstore).
         window.Hisense_installApp(APP.id, APP.name, APP.icon, APP.icon, APP.icon, APP.url, 'store', function (status) {
+          report('raw install status: ' + JSON.stringify(status) + ' (' + typeof status + ')');
           if (status) { say('Install failed (status ' + status + ').', 'err'); }
           else { say(APP.name + ' installed. Set DNS back to automatic and restart the TV.', 'ok'); refreshApps(APP.id); }
         });
@@ -105,10 +107,32 @@
       try {
         // Here a truthy status means SUCCESS (also matches vidaa-appstore).
         window.Hisense_uninstallApp(APP.id, function (status) {
+          report('raw uninstall status: ' + JSON.stringify(status) + ' (' + typeof status + ')');
           if (status) { say(APP.name + ' removed.', 'ok'); refreshApps(); }
           else { say('Uninstall failed (maybe it wasn\'t installed).', 'err'); }
         });
       } catch (e) { say('Uninstall failed: ' + e, 'err'); }
+    },
+    diagnose: function () {
+      var names = [];
+      for (var k in window) {
+        try { if (/hisense|vidaa|omi|tvapp|appmanager/i.test(k)) names.push(k); } catch (e) {}
+      }
+      names.sort();
+      say('Found ' + names.length + ' VIDAA-related globals (full list sent to your computer).');
+      for (var i = 0; i < names.length; i++) {
+        var v; try { v = window[names[i]]; } catch (e) { v = undefined; }
+        var desc = typeof v === 'function' ? 'function(' + v.length + ' args)' :
+                   (v && typeof v === 'object') ? 'object {' + Object.keys(v).slice(0, 25).join(', ') + '}' : typeof v;
+        report('DIAG ' + names[i] + ' = ' + desc);
+      }
+      var getters = ['Hisense_GetFirmWareVersion', 'Hisense_GetModelName', 'Hisense_GetBrand', 'Hisense_GetCountryCode', 'Hisense_GetApiVersion', 'Hisense_GetOSVersion'];
+      for (var j = 0; j < getters.length; j++) {
+        if (typeof window[getters[j]] === 'function') {
+          try { report('DIAG ' + getters[j] + '() -> ' + window[getters[j]]()); } catch (e) { report('DIAG ' + getters[j] + '() threw ' + e); }
+        }
+      }
+      say('Diagnosis sent. Tell Claude to read the Terminal.', 'ok');
     },
     info: function () {
       var fns = ['Hisense_GetBrand', 'Hisense_GetModelName', 'Hisense_GetFirmWareVersion', 'Hisense_GetCountryCode'];
