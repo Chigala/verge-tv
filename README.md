@@ -11,7 +11,8 @@ docs/index.html            the TV app (arrow keys, OK, Back, number keys in sear
 docs/data/                 the catalog, rebuilt daily by movies/build_catalog.py (about 3 minutes)
 docs/movies/index.html     redirect for TVs that installed the old /movies/ address
 movies/build_catalog.py    builds docs/data/ from TMDB
-movies/build_runtime_config.py  writes the ignored/deployment-only trailer config
+movies/build_runtime_config.py  writes the ignored/deployment-only Worker endpoint
+worker/                    private trailer resolver and HLS proxy for Cloudflare Workers
 installer/                 DNS + web server that lets the TV install the app
 .github/workflows/         rebuilds the catalog and deploys Pages from an artifact
 .env                       local settings (gitignored), read by build_catalog.py
@@ -25,12 +26,13 @@ Live at https://chigala.github.io/verge-tv/
 |---|---|---|
 | `TMDB_TOKEN` | GitHub secret and/or `.env` | TMDB "API Read Access Token" (or `TMDB_API_KEY` for the short v3 key). Required. |
 | `TMDB_SEARCH_KEY` | GitHub variable and/or `.env` | Optional short v3 key the TV uses to search all of TMDB and load any title, season or episode. Public: it ends up in the catalog. Without it, search covers only the catalog and series show only their latest 3 seasons. |
-| `TRAILER_URL_TEMPLATE` | GitHub Actions secret and/or `.env` | Trailer webpage or direct video template per title. It is generated only in the Pages deployment artifact and is never written to committed catalog data. This is the only source used by **Play**; there is no YouTube fallback. Placeholders: `{tmdb}` `{imdb}` `{type}` `{title}` `{year}`; with none, the TMDB number is added to the end. |
+| `TRAILER_API_URL` | GitHub Actions secret | Public Cloudflare Worker URL including the private `ACCESS_PATH`. This is the only source used by **Play**; there is no YouTube fallback. |
+| `TRAILER_URL_TEMPLATE` | Cloudflare Worker secret only | Sensitive upstream page template. Never put it in GitHub, Pages runtime data, `.env`, commands, logs or support messages. Supported placeholders: `{tmdb}` `{imdb}` `{type}` `{title}` `{year}`; with none, the TMDB number is added to the end. |
 
 ```bash
 gh secret set TMDB_TOKEN --repo Chigala/verge-tv
 gh variable set TMDB_SEARCH_KEY --repo Chigala/verge-tv
-gh secret set TRAILER_URL_TEMPLATE --repo Chigala/verge-tv --body 'https://example.com/{type}/{tmdb}'
+gh secret set TRAILER_API_URL --repo Chigala/verge-tv
 gh workflow run deploy-pages.yml --repo Chigala/verge-tv
 ```
 
@@ -38,12 +40,60 @@ gh workflow run deploy-pages.yml --repo Chigala/verge-tv
 
 ```bash
 python3 movies/build_catalog.py
-python3 movies/build_runtime_config.py docs/data/runtime.json
 python3 -m http.server 8000 --directory docs
 ```
 
 Then open http://localhost:8000 and use the arrow keys, Enter and Escape.
-`docs/data/runtime.json` is ignored by Git. For GitHub Pages, set **Settings → Pages → Build and deployment → Source** to **GitHub Actions** once; the deployment workflow injects the secret into the artifact.
+`docs/data/runtime.json` is ignored by Git. Without a local runtime file, the
+catalog works but the **Play** button is hidden. For GitHub Pages, set
+**Settings → Pages → Build and deployment → Source** to **GitHub Actions** once;
+the deployment workflow writes only the Worker endpoint into the artifact. It
+never receives the sensitive upstream template.
+
+## Private trailer Worker
+
+The Worker accepts a movie/TV identifier, fetches the configured source page,
+finds a plain HLS/MP4 media URL, encrypts it into a short-lived opaque token,
+and proxies the manifest and media back to the TV. It rewrites variant streams,
+segments, audio, subtitles, initialization files and key URIs. It deliberately
+does not bypass CAPTCHA, login or DRM challenges.
+
+The real source is not required for development or automated testing. All
+repository tests use invented `.invalid` domains. Only the owner should enter
+the real value, using Cloudflare's hidden interactive secret prompt:
+
+```bash
+cd worker
+npm install
+npx wrangler login
+npx wrangler secret put TRAILER_URL_TEMPLATE
+npx wrangler secret put ACCESS_PATH
+npx wrangler secret put PLAYBACK_TOKEN_SECRET
+npm test
+npm run deploy
+```
+
+Requirements for the two generated values:
+
+- `ACCESS_PATH`: 16–128 random letters, numbers, `_` or `-`.
+- `PLAYBACK_TOKEN_SECRET`: at least 32 random characters.
+
+After deployment, privately construct the endpoint as
+`https://<worker-host>/<ACCESS_PATH>`. Enter it interactively as the GitHub
+secret `TRAILER_API_URL`, rerun the Pages workflow, and then remove the former
+GitHub copy of the source template:
+
+```bash
+gh secret set TRAILER_API_URL --repo Chigala/verge-tv
+gh workflow run deploy-pages.yml --repo Chigala/verge-tv
+gh secret delete TRAILER_URL_TEMPLATE --repo Chigala/verge-tv
+```
+
+Do not paste either URL into an issue, commit, command argument or support chat.
+The endpoint path is intentionally obscure, but obscurity is not authentication;
+the Worker also validates identifiers, blocks private upstream hosts, issues
+expiring encrypted media tokens, restricts browser origins and emits only
+sanitized error codes. Cloudflare observability is disabled in `wrangler.jsonc`.
 
 ## Install it into the TV's Apps list
 

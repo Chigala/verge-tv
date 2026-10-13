@@ -4,3 +4,6 @@ installer/certs/
 installer/backups/
 .env
 docs/data/runtime.json
+worker/.dev.vars*
+worker/.wrangler/
+worker/node_modules/

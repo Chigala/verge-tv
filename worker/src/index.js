@@ -1,0 +1,483 @@
+const MAX_TEXT_BYTES = 2 * 1024 * 1024;
+const TOKEN_TTL_SECONDS = 20 * 60;
+const UPSTREAM_AGENT = 'Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/537.36 Safari/537.36';
+
+export default {
+  async fetch(request, env) {
+    return handleRequest(request, env);
+  },
+};
+
+export async function handleRequest(request, env) {
+  const requestUrl = new URL(request.url);
+  const cors = corsHeaders(request, env);
+
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: cors });
+  }
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return safeError('METHOD_NOT_ALLOWED', 405, cors);
+  }
+
+  const accessPath = normalizeAccessPath(env.ACCESS_PATH);
+  if (!accessPath || !env.TRAILER_URL_TEMPLATE || !env.PLAYBACK_TOKEN_SECRET) {
+    return safeError('WORKER_NOT_CONFIGURED', 503, cors);
+  }
+
+  const rootPath = '/' + accessPath;
+  if (requestUrl.pathname === rootPath + '/health') {
+    return json({ ok: true }, 200, cors);
+  }
+  if (requestUrl.pathname === rootPath + '/resolve') {
+    if (!originAllowed(request, env)) return safeError('ORIGIN_NOT_ALLOWED', 403, cors);
+    return resolveTrailer(request, env, rootPath, cors);
+  }
+  if (requestUrl.pathname.indexOf(rootPath + '/media/') === 0) {
+    if (!originAllowed(request, env)) return safeError('ORIGIN_NOT_ALLOWED', 403, cors);
+    return proxyMedia(request, env, rootPath, cors);
+  }
+  return safeError('NOT_FOUND', 404, cors);
+}
+
+async function resolveTrailer(request, env, rootPath, cors) {
+  const url = new URL(request.url);
+  const type = url.searchParams.get('type');
+  const tmdb = url.searchParams.get('tmdb') || '';
+  const imdb = url.searchParams.get('imdb') || '';
+  const title = (url.searchParams.get('title') || '').slice(0, 300);
+  const year = url.searchParams.get('year') || '';
+
+  if (type !== 'movie' && type !== 'tv') return safeError('INVALID_MEDIA_TYPE', 400, cors);
+  if (!/^\d{1,12}$/.test(tmdb)) return safeError('INVALID_TMDB_ID', 400, cors);
+  if (imdb && !/^tt\d{5,12}$/i.test(imdb)) return safeError('INVALID_IMDB_ID', 400, cors);
+  if (year && !/^\d{4}$/.test(year)) return safeError('INVALID_YEAR', 400, cors);
+
+  let sourceUrl;
+  try {
+    sourceUrl = fillTemplate(env.TRAILER_URL_TEMPLATE, { type, tmdb, imdb, title, year });
+    assertSafeUpstreamUrl(sourceUrl, env);
+  } catch (error) {
+    return safeError(errorCode(error, 'INVALID_TEMPLATE'), 500, cors);
+  }
+
+  let resolved;
+  try {
+    resolved = await resolveMedia(sourceUrl, env);
+  } catch (error) {
+    return safeError(errorCode(error, 'UPSTREAM_UNAVAILABLE'), statusForError(error), cors);
+  }
+
+  const expires = Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS;
+  const payload = {
+    u: resolved.url,
+    e: expires,
+    h: resolved.headers,
+  };
+  const token = await sealPayload(payload, env.PLAYBACK_TOKEN_SECRET);
+  const filename = resolved.kind === 'hls' ? 'master.m3u8' : mediaFilename(resolved.url, 'trailer.mp4');
+  const playbackUrl = new URL(request.url);
+  playbackUrl.pathname = rootPath + '/media/' + token + '/' + filename;
+  playbackUrl.search = '';
+
+  return json({ url: playbackUrl.toString(), type: resolved.kind, expiresAt: expires }, 200, cors);
+}
+
+export function fillTemplate(template, values) {
+  const input = String(template || '').trim();
+  if (!input) throw codedError('MISSING_TEMPLATE');
+  if (!/\{\w+\}/.test(input)) return input + values.tmdb;
+
+  const allowed = {
+    type: values.type || '',
+    tmdb: values.tmdb || '',
+    imdb: values.imdb || '',
+    title: values.title || '',
+    year: values.year || '',
+  };
+  const output = input.replace(/\{(\w+)\}/g, (match, name) => {
+    if (!Object.prototype.hasOwnProperty.call(allowed, name)) throw codedError('UNKNOWN_TEMPLATE_FIELD');
+    if (!allowed[name]) throw codedError('MISSING_TEMPLATE_VALUE');
+    return encodeURIComponent(allowed[name]);
+  });
+  return output;
+}
+
+async function resolveMedia(sourceUrl, env) {
+  const page = await fetchWithSession(sourceUrl, env);
+  const response = page.response;
+  const type = (response.headers.get('content-type') || '').toLowerCase();
+  const responseUrl = response.url || page.url;
+
+  assertSafeUpstreamUrl(responseUrl, env);
+  if (isHls(type, responseUrl)) {
+    return { url: responseUrl, kind: 'hls', headers: playbackHeaders(page) };
+  }
+  if (isVideo(type, responseUrl)) {
+    return { url: responseUrl, kind: 'video', headers: playbackHeaders(page) };
+  }
+  if (!response.ok) throw codedError('UPSTREAM_HTTP_' + response.status, response.status);
+
+  const length = Number(response.headers.get('content-length') || 0);
+  if (length > MAX_TEXT_BYTES) throw codedError('SOURCE_PAGE_TOO_LARGE', 502);
+  const text = await response.text();
+  if (new TextEncoder().encode(text).byteLength > MAX_TEXT_BYTES) {
+    throw codedError('SOURCE_PAGE_TOO_LARGE', 502);
+  }
+  if (looksInteractive(text)) throw codedError('SOURCE_REQUIRES_INTERACTION', 409);
+
+  const mediaUrl = extractMediaUrl(text, responseUrl);
+  if (!mediaUrl) throw codedError('NO_PLAYABLE_MEDIA', 404);
+  assertSafeUpstreamUrl(mediaUrl, env);
+  return {
+    url: mediaUrl,
+    kind: /\.m3u8(?:[?#]|$)/i.test(mediaUrl) ? 'hls' : 'video',
+    headers: playbackHeaders(page),
+  };
+}
+
+async function fetchWithSession(initialUrl, env) {
+  let current = initialUrl;
+  let referer = '';
+  const cookies = {};
+
+  for (let redirects = 0; redirects <= 5; redirects++) {
+    assertSafeUpstreamUrl(current, env);
+    const headers = new Headers({
+      Accept: 'text/html,application/xhtml+xml,application/vnd.apple.mpegurl,video/*;q=0.9,*/*;q=0.7',
+      'User-Agent': UPSTREAM_AGENT,
+    });
+    const cookie = cookieString(cookies);
+    if (cookie) headers.set('Cookie', cookie);
+    if (referer) headers.set('Referer', referer);
+
+    const response = await fetch(current, { headers, redirect: 'manual' });
+    absorbCookies(response.headers, cookies);
+    if (![301, 302, 303, 307, 308].includes(response.status)) {
+      return { response, url: current, referer: current, cookie: cookieString(cookies) };
+    }
+    const location = response.headers.get('location');
+    if (!location) throw codedError('UPSTREAM_REDIRECT_INVALID', 502);
+    referer = current;
+    current = new URL(location, current).toString();
+  }
+  throw codedError('UPSTREAM_TOO_MANY_REDIRECTS', 502);
+}
+
+function playbackHeaders(page) {
+  const result = { referer: page.referer || page.url };
+  try { result.origin = new URL(result.referer).origin; } catch (_) {}
+  if (page.cookie) result.cookie = page.cookie;
+  return result;
+}
+
+export function extractMediaUrl(input, baseUrl) {
+  const text = decodePageEscapes(String(input || ''));
+  const candidates = [];
+  let match;
+  const absolute = /https?:\/\/[^"'\s<>]+?\.(?:m3u8|mp4|m4v|webm|mov)(?:\?[^"'\s<>]*)?/gi;
+  while ((match = absolute.exec(text))) candidates.push(match[0]);
+
+  const assigned = /(?:file|src|source|url|hls|playlist|manifest)\s*[:=]\s*["']([^"']+)["']/gi;
+  while ((match = assigned.exec(text))) {
+    if (/\.(?:m3u8|mp4|m4v|webm|mov)(?:[?#]|$)/i.test(match[1])) candidates.push(match[1]);
+  }
+
+  const normalized = [];
+  for (const candidate of candidates) {
+    try {
+      const clean = candidate.replace(/&amp;/gi, '&').replace(/[),;]+$/, '');
+      const value = new URL(clean, baseUrl).toString();
+      if (!normalized.includes(value)) normalized.push(value);
+    } catch (_) {}
+  }
+  normalized.sort((a, b) => Number(!/\.m3u8(?:[?#]|$)/i.test(a)) - Number(!/\.m3u8(?:[?#]|$)/i.test(b)));
+  return normalized[0] || '';
+}
+
+function decodePageEscapes(value) {
+  return value
+    .replace(/\\u0026/gi, '&')
+    .replace(/\\u003d/gi, '=')
+    .replace(/\\u002f/gi, '/')
+    .replace(/\\\//g, '/')
+    .replace(/&#x26;/gi, '&')
+    .replace(/&#38;/g, '&');
+}
+
+function looksInteractive(text) {
+  const sample = text.slice(0, MAX_TEXT_BYTES).toLowerCase();
+  return sample.includes('confirm you are not a robot') ||
+    sample.includes('verify you are human') ||
+    sample.includes('g-recaptcha') ||
+    sample.includes('hcaptcha') ||
+    sample.includes('cf-chl-');
+}
+
+async function proxyMedia(request, env, rootPath, cors) {
+  const requestUrl = new URL(request.url);
+  const marker = rootPath + '/media/';
+  const remainder = requestUrl.pathname.slice(marker.length);
+  const token = remainder.split('/')[0];
+  if (!token) return safeError('INVALID_PLAYBACK_TOKEN', 400, cors);
+
+  let payload;
+  try {
+    payload = await openPayload(token, env.PLAYBACK_TOKEN_SECRET);
+    if (!payload || !payload.u || !payload.e || payload.e < Math.floor(Date.now() / 1000)) {
+      throw codedError('PLAYBACK_TOKEN_EXPIRED', 401);
+    }
+    assertSafeUpstreamUrl(payload.u, env);
+  } catch (error) {
+    return safeError(errorCode(error, 'INVALID_PLAYBACK_TOKEN'), statusForError(error, 401), cors);
+  }
+
+  const headers = new Headers({
+    Accept: '*/*',
+    'User-Agent': UPSTREAM_AGENT,
+  });
+  if (payload.h && payload.h.referer) headers.set('Referer', payload.h.referer);
+  if (payload.h && payload.h.origin) headers.set('Origin', payload.h.origin);
+  if (payload.h && payload.h.cookie) headers.set('Cookie', payload.h.cookie);
+  const range = request.headers.get('range');
+  if (range) headers.set('Range', range);
+
+  let upstream;
+  try {
+    upstream = await fetch(payload.u, { method: request.method, headers, redirect: 'follow' });
+    if (upstream.url) assertSafeUpstreamUrl(upstream.url, env);
+  } catch (_) {
+    return safeError('MEDIA_UPSTREAM_UNAVAILABLE', 502, cors);
+  }
+  if (!upstream.ok && upstream.status !== 206) {
+    return safeError('MEDIA_UPSTREAM_' + upstream.status, 502, cors);
+  }
+
+  const type = (upstream.headers.get('content-type') || '').toLowerCase();
+  const finalUrl = upstream.url || payload.u;
+  if (request.method !== 'HEAD' && isHls(type, finalUrl)) {
+    const text = await upstream.text();
+    if (new TextEncoder().encode(text).byteLength > MAX_TEXT_BYTES) {
+      return safeError('PLAYLIST_TOO_LARGE', 502, cors);
+    }
+    const rewritten = await rewriteHls(text, finalUrl, async (target) => {
+      assertSafeUpstreamUrl(target, env);
+      const child = await sealPayload({ u: target, e: payload.e, h: payload.h || {} }, env.PLAYBACK_TOKEN_SECRET);
+      const childUrl = new URL(request.url);
+      childUrl.pathname = rootPath + '/media/' + child + '/' + mediaFilename(target, 'stream.bin');
+      childUrl.search = '';
+      return childUrl.toString();
+    });
+    const responseHeaders = new Headers(cors);
+    responseHeaders.set('Content-Type', 'application/vnd.apple.mpegurl');
+    responseHeaders.set('Cache-Control', 'private, no-store');
+    responseHeaders.set('X-Content-Type-Options', 'nosniff');
+    return new Response(rewritten, { status: 200, headers: responseHeaders });
+  }
+
+  const responseHeaders = filteredMediaHeaders(upstream.headers, cors);
+  return new Response(request.method === 'HEAD' ? null : upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers: responseHeaders,
+  });
+}
+
+export async function rewriteHls(text, playlistUrl, wrap) {
+  const lines = String(text || '').split(/\r?\n/);
+  const output = [];
+  for (const original of lines) {
+    let line = original;
+    if (line && line[0] !== '#') {
+      line = await wrap(new URL(line.trim(), playlistUrl).toString());
+    } else if (/URI\s*=\s*["']/i.test(line)) {
+      line = await rewriteUriAttributes(line, playlistUrl, wrap);
+    }
+    output.push(line);
+  }
+  return output.join('\n');
+}
+
+async function rewriteUriAttributes(line, playlistUrl, wrap) {
+  const expression = /URI\s*=\s*(["'])(.*?)\1/gi;
+  let output = '';
+  let offset = 0;
+  let match;
+  while ((match = expression.exec(line))) {
+    output += line.slice(offset, match.index);
+    const absolute = new URL(match[2], playlistUrl).toString();
+    output += 'URI=' + match[1] + await wrap(absolute) + match[1];
+    offset = match.index + match[0].length;
+  }
+  return output + line.slice(offset);
+}
+
+function filteredMediaHeaders(source, cors) {
+  const headers = new Headers(cors);
+  const copy = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified'];
+  for (const name of copy) {
+    const value = source.get(name);
+    if (value) headers.set(name, value);
+  }
+  headers.set('Cache-Control', 'private, no-store');
+  headers.set('X-Content-Type-Options', 'nosniff');
+  return headers;
+}
+
+function isHls(contentType, url) {
+  return contentType.includes('mpegurl') || /\.m3u8(?:[?#]|$)/i.test(url || '');
+}
+
+function isVideo(contentType, url) {
+  return contentType.startsWith('video/') || /\.(?:mp4|m4v|webm|mov)(?:[?#]|$)/i.test(url || '');
+}
+
+function mediaFilename(url, fallback) {
+  try {
+    const name = new URL(url).pathname.split('/').pop() || fallback;
+    const safe = name.replace(/[^a-zA-Z0-9._-]/g, '').slice(-100);
+    return safe && /\.[a-z0-9]{2,5}$/i.test(safe) ? safe : fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function assertSafeUpstreamUrl(value, env) {
+  let url;
+  try { url = new URL(value); } catch (_) { throw codedError('INVALID_UPSTREAM_URL', 500); }
+  if (url.protocol !== 'https:' || url.username || url.password) throw codedError('UNSAFE_UPSTREAM_URL', 500);
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (isPrivateHost(host)) throw codedError('UNSAFE_UPSTREAM_HOST', 500);
+
+  const allowlist = String(env.ALLOWED_MEDIA_HOSTS || '').split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+  if (allowlist.length && !allowlist.some((rule) => hostMatches(host, rule))) {
+    throw codedError('UPSTREAM_HOST_NOT_ALLOWED', 403);
+  }
+  return url;
+}
+
+function isPrivateHost(host) {
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host === '::1') return true;
+  const parts = host.split('.');
+  if (parts.length !== 4 || !parts.every((part) => /^\d{1,3}$/.test(part))) return false;
+  const octets = parts.map(Number);
+  if (octets.some((value) => value > 255)) return true;
+  return octets[0] === 10 || octets[0] === 127 || octets[0] === 0 ||
+    (octets[0] === 169 && octets[1] === 254) ||
+    (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+    (octets[0] === 192 && octets[1] === 168);
+}
+
+function hostMatches(host, rule) {
+  if (rule.startsWith('*.')) return host === rule.slice(2) || host.endsWith(rule.slice(1));
+  return host === rule;
+}
+
+function normalizeAccessPath(value) {
+  const path = String(value || '').replace(/^\/+|\/+$/g, '');
+  return /^[a-zA-Z0-9_-]{16,128}$/.test(path) ? path : '';
+}
+
+function originAllowed(request, env) {
+  const origin = request.headers.get('origin');
+  const expected = String(env.APP_ORIGIN || '').replace(/\/$/, '');
+  return !origin || !expected || origin === expected;
+}
+
+function corsHeaders(request, env) {
+  const origin = request.headers.get('origin');
+  const expected = String(env.APP_ORIGIN || '').replace(/\/$/, '');
+  const allowed = origin && expected && origin === expected ? origin : (expected || origin || '*');
+  return {
+    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Methods': 'GET,HEAD,OPTIONS',
+    'Access-Control-Allow-Headers': 'Range,Content-Type',
+    'Access-Control-Expose-Headers': 'Content-Length,Content-Range,Accept-Ranges',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  };
+}
+
+function absorbCookies(headers, jar) {
+  let values = [];
+  if (typeof headers.getSetCookie === 'function') values = headers.getSetCookie();
+  else if (typeof headers.getAll === 'function') values = headers.getAll('Set-Cookie');
+  else if (headers.get('set-cookie')) values = splitSetCookie(headers.get('set-cookie'));
+  for (const value of values) {
+    const first = value.split(';', 1)[0];
+    const equal = first.indexOf('=');
+    if (equal > 0) jar[first.slice(0, equal).trim()] = first.slice(equal + 1).trim();
+  }
+}
+
+function splitSetCookie(value) {
+  return String(value || '').split(/,(?=\s*[^;,=]+=[^;,]*)/g);
+}
+
+function cookieString(jar) {
+  return Object.keys(jar).map((name) => name + '=' + jar[name]).join('; ');
+}
+
+async function sealPayload(payload, secret) {
+  const key = await tokenKey(secret);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plain = new TextEncoder().encode(JSON.stringify(payload));
+  const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plain));
+  return base64UrlEncode(iv) + '.' + base64UrlEncode(encrypted);
+}
+
+async function openPayload(token, secret) {
+  const pieces = token.split('.');
+  if (pieces.length !== 2) throw codedError('INVALID_PLAYBACK_TOKEN', 401);
+  const key = await tokenKey(secret);
+  const plain = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: base64UrlDecode(pieces[0]) },
+    key,
+    base64UrlDecode(pieces[1]),
+  );
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+async function tokenKey(secret) {
+  if (!secret || String(secret).length < 32) throw codedError('WORKER_NOT_CONFIGURED', 503);
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(secret)));
+  return crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+
+function base64UrlEncode(bytes) {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function base64UrlDecode(value) {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((value.length + 3) % 4);
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+function json(value, status, extraHeaders) {
+  const headers = new Headers(extraHeaders || {});
+  headers.set('Content-Type', 'application/json; charset=utf-8');
+  headers.set('Cache-Control', 'private, no-store');
+  headers.set('X-Content-Type-Options', 'nosniff');
+  return new Response(JSON.stringify(value), { status, headers });
+}
+
+function safeError(code, status, headers) {
+  return json({ error: /^[A-Z0-9_]{1,64}$/.test(code || '') ? code : 'INTERNAL_ERROR' }, status, headers);
+}
+
+function codedError(code, status) {
+  const error = new Error(code);
+  error.code = code;
+  error.status = status;
+  return error;
+}
+
+function errorCode(error, fallback) {
+  return error && /^[A-Z0-9_]{1,64}$/.test(error.code || '') ? error.code : fallback;
+}
+
+function statusForError(error, fallback = 502) {
+  return error && Number.isInteger(error.status) && error.status >= 400 && error.status <= 599 ? error.status : fallback;
+}

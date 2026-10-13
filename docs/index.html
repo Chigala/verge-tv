@@ -387,7 +387,7 @@
 
   /* ================= state ================= */
   var screen = 'home';
-  var items = {}, order = [], genres = {}, tabs = [], trailerTpl = '', apiKey = '';
+  var items = {}, order = [], genres = {}, tabs = [], trailerApi = '', apiKey = '';
   var detailCache = {}, seasonCache = {};
   var stack = [];              // pages to return to on BACK: {s: 'home'|'search'|'details', ...}
   var overlayFrom = 'details'; // page under the player / QR / episode screens
@@ -736,7 +736,7 @@
       var b = el('div', 'btn' + (primary ? ' primary' : ''), label);
       b._fn = fn; bx.appendChild(b); btns.push(b);
     }
-    var hasTrailer = !!trailerUrl(d);
+    var hasTrailer = !!trailerApi && !!d.tm;
     var seasons = d.ss || [];
     if (hasTrailer) addBtn('▶  Play', true, function () { playTrailer(d); });
     if (seasons.length) addBtn('Episodes', !hasTrailer, function () { det.z = det.zones[seasonZone + 1].els.length ? seasonZone + 1 : seasonZone; paintDetails(); });
@@ -1120,29 +1120,43 @@
 
   /* ================= trailers ================= */
   function ytUrl(key) { return 'https://www.youtube.com/watch?v=' + key; }
-  function isDirectVideoUrl(url) {
-    return /\.(?:mp4|m4v|webm|ogv|mov|m3u8)(?:[?#]|$)/i.test(url || '') || /^(?:blob:|data:video\/)/i.test(url || '');
+  var trailerResolveId = 0;
+  function trailerResolveUrl(d) {
+    if (!trailerApi || !d.tm) return '';
+    var base = trailerApi.replace(/\/+$/, '');
+    return base + '/resolve?type=' + (d.k === 's' ? 'tv' : 'movie') +
+      '&tmdb=' + encodeURIComponent(d.tm) +
+      '&imdb=' + encodeURIComponent(d.imdb || '') +
+      '&title=' + encodeURIComponent(d.t || '') +
+      '&year=' + encodeURIComponent(d.y || '');
   }
-  // A trailer page or video link from TRAILER_URL_TEMPLATE, when it can be filled in for this title.
-  // A link without {placeholders} gets the TMDB number added to the end.
-  function trailerUrl(d) {
-    if (!trailerTpl || !d.tm) return '';
-    if (!/\{\w+\}/.test(trailerTpl)) return trailerTpl + d.tm;
-    var vals = { tmdb: d.tm, imdb: d.imdb || '', type: d.k === 's' ? 'tv' : 'movie', title: d.t || '',
-                 year: d.y || '', yt: d.v && d.v.length ? d.v[0].k : '' };
-    var missing = false;
-    var url = trailerTpl.replace(/\{(\w+)\}/g, function (m, name) {
-      if (!vals.hasOwnProperty(name)) return m;
-      if (vals[name] === '') missing = true;
-      return encodeURIComponent(vals[name]);
-    });
-    return missing ? '' : url;
-  }
-  // The configured trailer link is the only source: there is no YouTube fallback.
+  // The private Worker is the only Play source. Real upstream URLs never enter this app.
   function playTrailer(d) {
-    var url = trailerUrl(d);
-    if (isDirectVideoUrl(url)) playVideo(url, d.t + ' · Trailer');
-    else if (url) fullPageWebPlayer(url, d);
+    var url = trailerResolveUrl(d);
+    if (!url) return;
+    overlayFrom = screen;
+    show('player');
+    $('v-title').textContent = d.t + ' · Trailer';
+    vMsg('Finding trailer…');
+    pokeOverlay();
+    var requestId = ++trailerResolveId;
+    var req = new XMLHttpRequest();
+    req.open('GET', url, true);
+    req.onreadystatechange = function () {
+      if (req.readyState !== 4 || requestId !== trailerResolveId || screen !== 'player') return;
+      var data = null;
+      try { data = JSON.parse(req.responseText || '{}'); } catch (e) {}
+      if (req.status < 200 || req.status >= 300 || !data || !/^https:\/\//i.test(data.url || '')) {
+        var code = data && /^[A-Z0-9_]{1,48}$/.test(data.error || '') ? data.error : 'TRAILER_UNAVAILABLE';
+        videoFailed(code);
+        return;
+      }
+      playVideo(data.url, d.t + ' · Trailer');
+    };
+    req.onerror = function () {
+      if (requestId === trailerResolveId && screen === 'player') videoFailed('SERVICE_UNREACHABLE');
+    };
+    req.send();
   }
 
   /* ================= trailer web page ================= */
@@ -1256,7 +1270,7 @@
   var video = $('video'), ovT, seekStep = 10, lastSeek = 0, hls = null, vSlowT;
   function vMsg(t) { $('v-msg').textContent = t; $('v-msg').className = 'center-msg' + (t ? '' : ' hide'); }
   function playVideo(url, title) {
-    overlayFrom = screen;
+    if (screen !== 'player') overlayFrom = screen;
     show('player');
     $('v-title').textContent = title;
     vMsg('Loading…');
@@ -1292,12 +1306,12 @@
     video.removeAttribute('src');
     video.load();   // releases the TV's hardware decoder
   }
-  function closeVideo() { stopVideo(); show(overlayFrom); }
-  function videoFailed() {
+  function closeVideo() { trailerResolveId++; stopVideo(); show(overlayFrom); }
+  function videoFailed(code) {
     if (screen !== 'player') return;
     clearTimeout(vSlowT);
     $('v-ov').className = 'ov off';
-    vMsg('This trailer can’t play right now. Press BACK to go back.');
+    vMsg('This trailer can’t play right now' + (code ? ' (' + code + ')' : '') + '. Press BACK to go back.');
   }
   function pokeOverlay() {
     $('v-ov').className = 'ov';
@@ -1479,10 +1493,10 @@
   var catalogStamp = Math.floor(Date.now() / 3600000);
   getJSON('data/home.json?t=' + catalogStamp, function (data) {
     getJSON('data/runtime.json?t=' + catalogStamp, function (runtime) {
-      trailerTpl = runtime.trailer || '';
+      trailerApi = runtime.trailerApi || '';
       startCatalog(data);
     }, function () {
-      trailerTpl = '';
+      trailerApi = '';
       startCatalog(data);
     });
   }, function (err) {

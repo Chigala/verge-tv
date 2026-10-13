@@ -28,9 +28,9 @@ def main():
         sys.exit("usage: build_runtime_config.py OUTPUT_PATH")
 
     load_env_file(ROOT / ".env")
-    trailer = os.environ.get("TRAILER_URL_TEMPLATE", "").strip()
-    if not trailer:
-        sys.exit("TRAILER_URL_TEMPLATE is not configured")
+    # This is only the public Worker entry point. The sensitive upstream
+    # trailer template belongs exclusively in a Cloudflare Worker secret.
+    trailer_api = os.environ.get("TRAILER_API_URL", "").strip()
 
     output = Path(sys.argv[1])
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -47,7 +47,7 @@ def main():
             home_temporary.replace(home)
 
     temporary = output.with_suffix(output.suffix + ".tmp")
-    temporary.write_text(json.dumps({"trailer": trailer}, separators=(",", ":")), encoding="utf-8")
+    temporary.write_text(json.dumps({"trailerApi": trailer_api}, separators=(",", ":")), encoding="utf-8")
     temporary.replace(output)
     print("wrote runtime configuration")
 

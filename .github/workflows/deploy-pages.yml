@@ -35,7 +35,7 @@ jobs:
           cp -R docs/. _site/
       - name: Add runtime configuration
         env:
-          TRAILER_URL_TEMPLATE: ${{ secrets.TRAILER_URL_TEMPLATE }}
+          TRAILER_API_URL: ${{ secrets.TRAILER_API_URL }}
         run: python3 movies/build_runtime_config.py _site/data/runtime.json
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
