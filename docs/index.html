@@ -246,6 +246,7 @@
     <h1 id="e-title" class="clamp2"></h1>
     <div class="meta" id="e-meta"></div>
     <div id="e-over"></div>
+    <div class="btns"><div class="btn primary focus" id="e-play">▶ Watch episode</div></div>
   </div>
   <div class="keys"><span class="key">OK</span>watch episode<span class="key">◀ ▶</span>previous / next episode<span class="key">BACK</span>close</div>
 </div>
@@ -964,6 +965,7 @@
     var ep = epi.season.eps[epi.i];
     playMedia(epi.d, epi.season.n, ep.n, epi.season.nm + ' · Episode ' + ep.n + (ep.t ? ' · ' + ep.t : ''));
   }
+  $('e-play').onclick = playEpisode;
 
   /* ================= search ================= */
   var KB = ['abcdef', 'ghijkl', 'mnopqr', 'stuvwx', 'yz1234', '567890'];
