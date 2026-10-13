@@ -11,11 +11,6 @@ Settings, from the environment or a .env file in the repo root:
   TMDB_SEARCH_KEY       optional v3 key the TV uses to search all of TMDB and
                         load titles that aren't in the catalog. It ends up in
                         the public catalog, so anyone can read it.
-  TRAILER_URL_TEMPLATE  optional direct video link (mp4/webm/m3u8) per title,
-                        used instead of YouTube. Placeholders: {tmdb} {imdb}
-                        {type} (movie|tv) {title} {year} {yt}; without any, the
-                        TMDB number is added to the end. Also public.
-
 Output (small, pre-sized, so the TV does almost no work):
   docs/data/home.json         tabs, rows and one compact card per title
   docs/data/d/<id>.json       one detail file per title, loaded on demand
@@ -65,7 +60,6 @@ IMG = "https://image.tmdb.org/t/p/"
 TOKEN = os.environ.get("TMDB_TOKEN", "").strip()
 API_KEY = os.environ.get("TMDB_API_KEY", "").strip()
 SEARCH_KEY = os.environ.get("TMDB_SEARCH_KEY", "").strip()
-TRAILER_URL_TEMPLATE = os.environ.get("TRAILER_URL_TEMPLATE", "").strip()
 TODAY = time.strftime("%Y-%m-%d")
 
 
@@ -424,7 +418,7 @@ def main():
     for iid, d in details.items():
         write_json(os.path.join(tmp, "d", iid + ".json"), d)
     write_json(os.path.join(tmp, "home.json"),
-               {"built": int(time.time()), "key": SEARCH_KEY, "trailer": TRAILER_URL_TEMPLATE,
+               {"built": int(time.time()), "key": SEARCH_KEY,
                 "genres": genres, "tabs": tabs, "items": items})
 
     shutil.rmtree(OUT, ignore_errors=True)

@@ -166,9 +166,10 @@
   #s-empty { color: var(--muted); font-size: 1.2vw; margin-top: 2vw; line-height: 1.5; }
 
   /* ---------- players ---------- */
-  #player, #yts { background: #000; }
+  #player, #yts, #webs { background: #000; }
   #video { width: 100%; height: 100%; background: #000; }
   #ytbox, #ytbox iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+  #web-frame { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; background: #000; }
   .ov { position: absolute; left: 0; right: 0; bottom: 0; padding: 3vw 4vw 2.4vw;
     background: linear-gradient(0deg, rgba(0,0,0,.85), rgba(0,0,0,0)); transition: opacity .2s linear; }
   .ov.off { opacity: 0; }
@@ -283,6 +284,14 @@
   </div>
 </div>
 
+<div id="webs" class="screen">
+  <iframe id="web-frame" title="Trailer webpage" tabindex="0" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen></iframe>
+  <div class="ov" id="web-ov">
+    <div class="ttl" id="web-title"></div>
+    <div class="keys" id="web-help"><span class="key">OK</span>control player<span class="key">▼</span>full-page mode<span class="key">BACK</span>close</div>
+  </div>
+</div>
+
 <div id="qrs" class="screen">
   <h2 id="qr-title">Scan to watch on your phone</h2>
   <div class="sub" id="qr-sub"></div>
@@ -384,7 +393,7 @@
   var overlayFrom = 'details'; // page under the player / QR / episode screens
 
   function show(id) {
-    var ids = ['home', 'details', 'search', 'player', 'yts', 'qrs', 'epi'];
+    var ids = ['home', 'details', 'search', 'player', 'yts', 'webs', 'qrs', 'epi'];
     for (var i = 0; i < ids.length; i++) $(ids[i]).className = 'screen' + (ids[i] === id ? ' on' : '');
     screen = id;
   }
@@ -727,9 +736,9 @@
       var b = el('div', 'btn' + (primary ? ' primary' : ''), label);
       b._fn = fn; bx.appendChild(b); btns.push(b);
     }
-    var hasTrailer = !!(trailerUrl(d) || (d.v && d.v.length));
+    var hasTrailer = !!trailerUrl(d);
     var seasons = d.ss || [];
-    if (hasTrailer) addBtn('▶  Play trailer', true, function () { playTrailer(d); });
+    if (hasTrailer) addBtn('▶  Play', true, function () { playTrailer(d); });
     if (seasons.length) addBtn('Episodes', !hasTrailer, function () { det.z = det.zones[seasonZone + 1].els.length ? seasonZone + 1 : seasonZone; paintDetails(); });
     if (d.v && d.v.length) addBtn('Trailer on phone', false, function () { showQR(ytUrl(d.v[0].k), 'Scan to watch the trailer', d.t); });
     if (d.info) addBtn('More info', !hasTrailer && !seasons.length, function () { showQR(d.info, 'Scan for more info', d.t); });
@@ -1111,7 +1120,10 @@
 
   /* ================= trailers ================= */
   function ytUrl(key) { return 'https://www.youtube.com/watch?v=' + key; }
-  // A direct video link from TRAILER_URL_TEMPLATE, when it can be filled in for this title.
+  function isDirectVideoUrl(url) {
+    return /\.(?:mp4|m4v|webm|ogv|mov|m3u8)(?:[?#]|$)/i.test(url || '') || /^(?:blob:|data:video\/)/i.test(url || '');
+  }
+  // A trailer page or video link from TRAILER_URL_TEMPLATE, when it can be filled in for this title.
   // A link without {placeholders} gets the TMDB number added to the end.
   function trailerUrl(d) {
     if (!trailerTpl || !d.tm) return '';
@@ -1126,12 +1138,119 @@
     });
     return missing ? '' : url;
   }
-  // With a trailer link set, that's the only source: no YouTube fallback.
+  // The configured trailer link is the only source: there is no YouTube fallback.
   function playTrailer(d) {
     var url = trailerUrl(d);
-    if (url) playVideo(url, d.t + ' · Trailer');
-    else if (d.v && d.v.length) playYT(d, d.v[0].k, d.v[0].n);
+    if (isDirectVideoUrl(url)) playVideo(url, d.t + ' · Trailer');
+    else if (url) fullPageWebPlayer(url, d);
   }
+
+  /* ================= trailer web page ================= */
+  var webOvT, webWaitT, webBaseUrl = '', webOrigin = '', webProgress = 0, webProgressKey = '';
+  function webUrlAt(url, seconds) {
+    if (!seconds || seconds < 5) return url;
+    var hash = '', at = url.indexOf('#');
+    if (at >= 0) { hash = url.slice(at); url = url.slice(0, at); }
+    if (/[?&]startAt=/.test(url)) url = url.replace(/([?&])startAt=[^&#]*/i, '$1startAt=' + Math.floor(seconds));
+    else url += (url.indexOf('?') >= 0 ? '&' : '?') + 'startAt=' + Math.floor(seconds);
+    return url + hash;
+  }
+  function webOriginOf(url) {
+    var a = document.createElement('a'); a.href = url;
+    return a.protocol && a.host ? a.protocol + '//' + a.host : '';
+  }
+  function readWebProgress() {
+    try { return parseFloat(localStorage.getItem(webProgressKey)) || 0; } catch (e) { return 0; }
+  }
+  function saveWebProgress() {
+    if (!webProgressKey || !webProgress) return;
+    try { localStorage.setItem(webProgressKey, String(webProgress)); } catch (e) {}
+  }
+  function focusWebPlayer() {
+    $('web-ov').className = 'ov off';
+    try { $('web-frame').focus(); $('web-frame').contentWindow.focus(); } catch (e) {}
+  }
+  function playWebPage(url, title, d) {
+    overlayFrom = screen;
+    webBaseUrl = url;
+    webOrigin = webOriginOf(url);
+    webProgressKey = 'verge-progress-' + (d.imdb || d.tm || d.t);
+    webProgress = readWebProgress();
+    $('web-title').textContent = title;
+    $('web-help').innerHTML = '<span class="key">OK</span>control player<span class="key">▼</span>full-page mode<span class="key">BACK</span>close';
+    $('web-ov').className = 'ov';
+    $('web-frame').src = webUrlAt(url, webProgress);
+    show('webs');
+    window.focus();
+    clearTimeout(webOvT);
+    clearTimeout(webWaitT);
+    webOvT = setTimeout(function () { $('web-ov').className = 'ov off'; }, 4500);
+    webWaitT = setTimeout(function () {
+      if (screen !== 'webs') return;
+      $('web-help').innerHTML = '<span class="key">OK</span>focus player, then press OK again<span class="key">▼</span>full-page mode<span class="key">BACK</span>close';
+      $('web-ov').className = 'ov';
+    }, 7000);
+  }
+  function closeWebPage() {
+    clearTimeout(webOvT);
+    clearTimeout(webWaitT);
+    saveWebProgress();
+    $('web-frame').src = 'about:blank';
+    if (screen === 'webs') show(overlayFrom);
+  }
+  function fullPageWebPlayer(url, d) {
+    if (url) {
+      webBaseUrl = url;
+      webOrigin = webOriginOf(url);
+      webProgressKey = 'verge-progress-' + (d.imdb || d.tm || d.t);
+      webProgress = readWebProgress();
+    }
+    saveWebProgress();
+    try { sessionStorage.setItem('verge-player-return', JSON.stringify({ it: det.it })); } catch (e) {}
+    location.href = webUrlAt(webBaseUrl, webProgress);
+  }
+  function restoreFullPageReturn() {
+    var raw = '';
+    try { raw = sessionStorage.getItem('verge-player-return') || ''; sessionStorage.removeItem('verge-player-return'); } catch (e) {}
+    if (!raw) return false;
+    try {
+      var saved = JSON.parse(raw);
+      if (!saved.it) return false;
+      stack = [{ s: 'home' }];
+      openDetails(saved.it);
+      return true;
+    } catch (e2) { return false; }
+  }
+  function webKey(k) {
+    if (k === K.STOP) { closeWebPage(); return true; }
+    if (k === K.DOWN) { fullPageWebPlayer(); return true; }
+    focusWebPlayer();
+    return true;
+  }
+  window.addEventListener('message', function (event) {
+    if (screen !== 'webs' || (event.source && event.source !== $('web-frame').contentWindow)) return;
+    if (webOrigin && event.origin && event.origin !== webOrigin) return;
+    var message = event.data;
+    if (typeof message === 'string') { try { message = JSON.parse(message); } catch (e) { return; } }
+    if (!message || message.type !== 'PLAYER_EVENT' || !message.data) return;
+    var data = message.data, status = data.player_status;
+    if (typeof data.player_progress === 'number') webProgress = data.player_progress;
+    if (status === 'playing' || status === 'paused' || status === 'seeked') saveWebProgress();
+    if (status === 'playing') {
+      clearTimeout(webWaitT);
+      $('web-ov').className = 'ov off';
+      focusWebPlayer();
+    } else if (status === 'completed') {
+      try { localStorage.removeItem(webProgressKey); } catch (e2) {}
+      webProgress = 0;
+      closeWebPage();
+    }
+  }, false);
+  window.addEventListener('pageshow', function (event) {
+    if (!event.persisted || screen !== 'webs') return;
+    try { sessionStorage.removeItem('verge-player-return'); } catch (e) {}
+    closeWebPage();
+  }, false);
 
   /* ================= native player ================= */
   var video = $('video'), ovT, seekStep = 10, lastSeek = 0, hls = null, vSlowT;
@@ -1312,6 +1431,7 @@
       if (pending) { pending = null; stack.pop(); return; }
       if (screen === 'player') closeVideo();
       else if (screen === 'yts') closeTrailer();
+      else if (screen === 'webs') closeWebPage();
       else if (screen === 'qrs' || screen === 'epi') show(overlayFrom);
       else if (screen === 'details' || screen === 'search') detailsBack();
       else homeBack();
@@ -1324,6 +1444,7 @@
     else if (screen === 'search') handled = searchKey(k);
     else if (screen === 'player') handled = playerKey(k);
     else if (screen === 'yts') handled = ytKey(k);
+    else if (screen === 'webs') handled = webKey(k);
     else if (screen === 'epi') handled = episodeKey(k);
     if (handled) e.preventDefault();
   }, false);
@@ -1339,10 +1460,9 @@
     else if (screen === 'details') paintDetails();
   }, false);
 
-  getJSON('data/home.json?t=' + Math.floor(Date.now() / 3600000), function (data) {
+  function startCatalog(data) {
     items = data.items || {};
     genres = data.genres || {};
-    trailerTpl = data.trailer || '';
     apiKey = data.key || '';
     order = [];
     for (var id in items) if (items.hasOwnProperty(id)) { items[id].id = id; order.push(id); }
@@ -1353,6 +1473,18 @@
     buildKeyboard();
     buildNav();
     buildTab(0);
+    restoreFullPageReturn();
+  }
+
+  var catalogStamp = Math.floor(Date.now() / 3600000);
+  getJSON('data/home.json?t=' + catalogStamp, function (data) {
+    getJSON('data/runtime.json?t=' + catalogStamp, function (runtime) {
+      trailerTpl = runtime.trailer || '';
+      startCatalog(data);
+    }, function () {
+      trailerTpl = '';
+      startCatalog(data);
+    });
   }, function (err) {
     $('status').textContent = 'Couldn’t load the catalog (' + err + '). Check the internet connection and reopen the app.';
   });

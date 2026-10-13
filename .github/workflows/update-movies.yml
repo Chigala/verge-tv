@@ -25,7 +25,6 @@ jobs:
           TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           TMDB_SEARCH_KEY: ${{ vars.TMDB_SEARCH_KEY }}
-          TRAILER_URL_TEMPLATE: ${{ vars.TRAILER_URL_TEMPLATE }}
         run: python3 movies/build_catalog.py
       - name: Commit if changed
         run: |

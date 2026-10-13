@@ -3,3 +3,4 @@ installer/certs/
 .DS_Store
 installer/backups/
 .env
+docs/data/runtime.json
