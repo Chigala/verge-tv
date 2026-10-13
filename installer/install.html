@@ -94,7 +94,7 @@
 
   function notAvailable() {
     if (typeof window.Hisense_GetCountryCode === 'function') {
-      say('This TV hides the install function (Hisense_installApp). Your firmware has probably blocked custom installs.', 'err');
+      say('Hisense_installApp isn\'t available on this TV\'s firmware. Try Install (new).', 'err');
     } else {
       say('This doesn\'t look like a VIDAA TV browser, or the page wasn\'t opened as https://vidaahub.com.', 'err');
     }
@@ -105,7 +105,7 @@
       if (!isVidaa()) return notAvailable();
       say('Installing ' + APP.name + '…');
       try {
-        // Callback: a truthy status means it FAILED (undocumented API; matches vidaa-appstore).
+        // Callback: a truthy status means it failed (same handling as vidaa-appstore).
         window.Hisense_installApp(APP.id, APP.name, APP.icon, APP.icon, APP.icon, APP.url, 'store', function (status) {
           report('raw install status: ' + JSON.stringify(status) + ' (' + typeof status + ')');
           if (status) { say('Install failed (status ' + status + ').', 'err'); }

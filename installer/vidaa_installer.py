@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Install a web app onto a Hisense VIDAA TV from this computer.
 
-VIDAA only exposes its Hisense_installApp() function to pages loaded from
-vidaahub.com. This script makes your TV believe this computer *is*
-vidaahub.com, for as long as the TV's DNS points here:
+VIDAA makes its app-install functions available to pages served from
+vidaahub.com. While the TV's DNS points at this computer, this script serves
+a local install page under that name:
 
   * DNS server (port 53): answers vidaahub.com with this computer's IP and
     forwards every other lookup to a normal public resolver, so the TV's
