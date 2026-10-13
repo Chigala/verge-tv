@@ -31,6 +31,8 @@ def main():
     # This is only the public Worker entry point. The sensitive upstream
     # trailer template belongs exclusively in a Cloudflare Worker secret.
     trailer_api = os.environ.get("TRAILER_API_URL", "").strip()
+    if not trailer_api:
+        sys.exit("TRAILER_API_URL is not configured")
 
     output = Path(sys.argv[1])
     output.parent.mkdir(parents=True, exist_ok=True)

@@ -1492,7 +1492,9 @@
 
   var catalogStamp = Math.floor(Date.now() / 3600000);
   getJSON('data/home.json?t=' + catalogStamp, function (data) {
-    getJSON('data/runtime.json?t=' + catalogStamp, function (runtime) {
+    // Runtime settings can change independently of the hourly catalog. Always
+    // use a fresh URL so a previously empty deployment cannot hide Play.
+    getJSON('data/runtime.json?t=' + Date.now(), function (runtime) {
       trailerApi = runtime.trailerApi || '';
       startCatalog(data);
     }, function () {
