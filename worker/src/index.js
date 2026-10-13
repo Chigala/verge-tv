@@ -1,6 +1,7 @@
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 const TOKEN_TTL_SECONDS = 20 * 60;
 const UPSTREAM_AGENT = 'Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/537.36 Safari/537.36';
+const BROWSER_TIMEOUT = Symbol('browser-timeout');
 
 export default {
   async fetch(request, env) {
@@ -190,7 +191,7 @@ async function resolveMediaInBrowser(sourceUrl, env) {
       await activateBrowserPlayers(pages);
       await delay(attempt === 0 ? 2500 : 3500);
     }
-    await Promise.allSettled(Array.from(pendingInspections));
+    await browserWithin(Promise.allSettled(Array.from(pendingInspections)), 2500);
     if (await browserShowsChallenge(pages)) throw codedError('SOURCE_REQUIRES_INTERACTION', 409);
 
     const selected = selectBrowserCandidate(candidates);
@@ -209,8 +210,8 @@ async function resolveMediaInBrowser(sourceUrl, env) {
     }
     throw codedError('BROWSER_RUN_FAILED', 502);
   } finally {
-    if (page) { try { await page.close(); } catch (_) {} }
-    if (browser) { try { await browser.close(); } catch (_) {} }
+    if (page) { try { await browserWithin(page.close(), 1500); } catch (_) {} }
+    if (browser) { try { await browserWithin(browser.close(), 2000); } catch (_) {} }
   }
 }
 
@@ -251,7 +252,8 @@ async function inspectBrowserResponse(response, candidates, evidence) {
   if (!/(?:json|javascript|text\/plain)/i.test(contentType)) return;
   const length = Number(responseHeaders['content-length'] || 0);
   if (length > 512 * 1024) return;
-  const body = await response.text();
+  const body = await browserWithin(response.text(), 1800);
+  if (body === BROWSER_TIMEOUT || typeof body !== 'string') return;
   if (new TextEncoder().encode(body).byteLength > 512 * 1024) return;
   const extracted = extractMediaUrl(body, url);
   if (!extracted) return;
@@ -334,14 +336,14 @@ async function browserShowsChallenge(pages) {
     for (const frame of frames) {
       if (/(?:captcha|challenge|recaptcha|hcaptcha|challenge-platform)/i.test(frame.url() || '')) return true;
       try {
-        const blocked = await frame.evaluate(() => {
+        const blocked = await browserWithin(frame.evaluate(() => {
           const text = String(document.body && document.body.innerText || '').slice(0, 10000).toLowerCase();
           return text.includes('confirm you are not a robot') ||
             text.includes('verify you are human') ||
             text.includes('checking your browser') ||
             text.includes('security verification') ||
             !!document.querySelector('.g-recaptcha, .h-captcha, .cf-turnstile, iframe[src*="captcha"], iframe[src*="challenges.cloudflare.com"], [class*="captcha"], input[name="cf-turnstile-response"]');
-        });
+        }), 1500);
         if (blocked) return true;
       } catch (_) {}
     }
@@ -368,10 +370,10 @@ async function activateBrowserPlayers(pages) {
     for (const frame of frames) {
       if (/(?:captcha|challenge|recaptcha|hcaptcha|challenge-platform)/i.test(frame.url() || '')) continue;
       try {
-        await frame.evaluate(() => {
+        await browserWithin(frame.evaluate(() => {
           const videos = Array.from(document.querySelectorAll('video'));
           for (const video of videos) video.muted = true;
-        });
+        }), 1500);
       } catch (_) {}
 
       let clicked = false;
@@ -395,14 +397,14 @@ async function activateBrowserPlayers(pages) {
       }
 
       try {
-        await frame.evaluate(() => {
+        await browserWithin(frame.evaluate(() => {
           const videos = Array.from(document.querySelectorAll('video'));
           for (const video of videos) {
             video.muted = true;
             const playing = video.play();
             if (playing && playing.catch) playing.catch(() => {});
           }
-        });
+        }), 1500);
       } catch (_) {}
     }
   }
@@ -410,6 +412,13 @@ async function activateBrowserPlayers(pages) {
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function browserWithin(promise, milliseconds) {
+  return Promise.race([
+    Promise.resolve(promise),
+    delay(milliseconds).then(() => BROWSER_TIMEOUT),
+  ]);
 }
 
 async function fetchWithSession(initialUrl, env) {

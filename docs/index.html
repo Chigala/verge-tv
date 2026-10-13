@@ -1142,6 +1142,7 @@
     var requestId = ++trailerResolveId;
     var req = new XMLHttpRequest();
     req.open('GET', url, true);
+    req.timeout = 50000;
     req.onreadystatechange = function () {
       if (req.readyState !== 4 || requestId !== trailerResolveId || screen !== 'player') return;
       var data = null;
@@ -1155,6 +1156,9 @@
     };
     req.onerror = function () {
       if (requestId === trailerResolveId && screen === 'player') videoFailed('SERVICE_UNREACHABLE');
+    };
+    req.ontimeout = function () {
+      if (requestId === trailerResolveId && screen === 'player') videoFailed('SERVICE_TIMEOUT');
     };
     req.send();
   }
