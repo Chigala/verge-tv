@@ -43,6 +43,25 @@ test('redirects an embed directly to the configured player without resolving med
   assert.equal(response.headers.get('cache-control'), 'no-store');
 });
 
+test('returns a player URL without fetching it so Pages remains the iframe referrer', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async () => { throw new Error('player URL lookup must not fetch upstream'); };
+
+  const env = {
+    ACCESS_PATH: 'private_test_path_1234',
+    APP_ORIGIN: 'https://chigala.github.io',
+    TRAILER_URL_TEMPLATE: 'https://player.example.invalid/{type}/{tmdb}',
+  };
+  const response = await handleRequest(new Request(
+    'https://worker.example.invalid/private_test_path_1234/player?type=movie&tmdb=533533',
+    { headers: { Origin: env.APP_ORIGIN } },
+  ), env);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { url: 'https://player.example.invalid/movie/533533' });
+});
+
 test('finds an escaped HLS URL without contacting it', () => {
   const page = String.raw`{"file":"https:\/\/media.example.invalid\/trailers\/master.m3u8?token=fake\u0026v=1"}`;
   assert.equal(

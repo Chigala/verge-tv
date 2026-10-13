@@ -39,6 +39,10 @@ export async function handleRequest(request, env) {
     if (!originAllowed(request, env)) return safeError('ORIGIN_NOT_ALLOWED', 403, cors);
     return redirectToPlayer(request, env, cors);
   }
+  if (requestUrl.pathname === rootPath + '/player') {
+    if (!originAllowed(request, env)) return safeError('ORIGIN_NOT_ALLOWED', 403, cors);
+    return disclosePlayerUrl(request, env, cors);
+  }
   if (requestUrl.pathname === rootPath + '/resolve') {
     if (!env.PLAYBACK_TOKEN_SECRET) return safeError('WORKER_NOT_CONFIGURED', 503, cors);
     if (!originAllowed(request, env)) return safeError('ORIGIN_NOT_ALLOWED', 403, cors);
@@ -52,7 +56,7 @@ export async function handleRequest(request, env) {
   return safeError('NOT_FOUND', 404, cors);
 }
 
-function redirectToPlayer(request, env, cors) {
+function configuredPlayerUrl(request, env) {
   const url = new URL(request.url);
   const type = url.searchParams.get('type');
   const tmdb = url.searchParams.get('tmdb') || '';
@@ -61,22 +65,24 @@ function redirectToPlayer(request, env, cors) {
   const year = url.searchParams.get('year') || '';
   const startAt = url.searchParams.get('startAt') || url.searchParams.get('t') || '';
 
-  if (type !== 'movie' && type !== 'tv') return safeError('INVALID_MEDIA_TYPE', 400, cors);
-  if (!/^\d{1,12}$/.test(tmdb)) return safeError('INVALID_TMDB_ID', 400, cors);
-  if (imdb && !/^tt\d{5,12}$/i.test(imdb)) return safeError('INVALID_IMDB_ID', 400, cors);
-  if (year && !/^\d{4}$/.test(year)) return safeError('INVALID_YEAR', 400, cors);
-  if (startAt && !/^\d{1,10}$/.test(startAt)) return safeError('INVALID_START_TIME', 400, cors);
+  if (type !== 'movie' && type !== 'tv') throw codedError('INVALID_MEDIA_TYPE', 400);
+  if (!/^\d{1,12}$/.test(tmdb)) throw codedError('INVALID_TMDB_ID', 400);
+  if (imdb && !/^tt\d{5,12}$/i.test(imdb)) throw codedError('INVALID_IMDB_ID', 400);
+  if (year && !/^\d{4}$/.test(year)) throw codedError('INVALID_YEAR', 400);
+  if (startAt && !/^\d{1,10}$/.test(startAt)) throw codedError('INVALID_START_TIME', 400);
 
+  const destination = assertSafeUpstreamUrl(
+    fillTemplate(env.TRAILER_URL_TEMPLATE, { type, tmdb, imdb, title, year }),
+    env,
+  );
+  if (startAt) destination.searchParams.set('startAt', startAt);
+  return destination;
+}
+
+function redirectToPlayer(request, env, cors) {
   let destination;
-  try {
-    destination = assertSafeUpstreamUrl(
-      fillTemplate(env.TRAILER_URL_TEMPLATE, { type, tmdb, imdb, title, year }),
-      env,
-    );
-    if (startAt) destination.searchParams.set('startAt', startAt);
-  } catch (error) {
-    return safeError(errorCode(error, 'INVALID_TEMPLATE'), 500, cors);
-  }
+  try { destination = configuredPlayerUrl(request, env); }
+  catch (error) { return safeError(errorCode(error, 'INVALID_TEMPLATE'), statusForError(error, 500), cors); }
 
   return new Response(null, {
     status: 302,
@@ -86,6 +92,14 @@ function redirectToPlayer(request, env, cors) {
       'Referrer-Policy': 'no-referrer',
     },
   });
+}
+
+function disclosePlayerUrl(request, env, cors) {
+  try {
+    return json({ url: configuredPlayerUrl(request, env).toString() }, 200, cors);
+  } catch (error) {
+    return safeError(errorCode(error, 'INVALID_TEMPLATE'), statusForError(error, 500), cors);
+  }
 }
 
 async function resolveTrailer(request, env, rootPath, cors) {

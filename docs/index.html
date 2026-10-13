@@ -1121,21 +1121,53 @@
   /* ================= trailers ================= */
   function ytUrl(key) { return 'https://www.youtube.com/watch?v=' + key; }
   var trailerResolveId = 0, trailerResolveTimer = 0, trailerRequest = null;
-  function trailerEmbedUrl(d) {
+  function trailerPlayerUrl(d) {
     if (!trailerApi || !d.tm) return '';
     var base = trailerApi.replace(/\/+$/, '');
-    return base + '/embed?type=' + (d.k === 's' ? 'tv' : 'movie') +
+    return base + '/player?type=' + (d.k === 's' ? 'tv' : 'movie') +
       '&tmdb=' + encodeURIComponent(d.tm) +
       '&imdb=' + encodeURIComponent(d.imdb || '') +
       '&title=' + encodeURIComponent(d.t || '') +
       '&year=' + encodeURIComponent(d.y || '');
   }
-  // The Worker only fills the private template and redirects this iframe. The
-  // player itself handles playback and receives remote commands via postMessage.
+  // The Worker fills the private template, then this page performs the iframe
+  // navigation so the player receives the normal GitHub Pages referrer.
   function playTrailer(d) {
-    var url = trailerEmbedUrl(d);
+    var url = trailerPlayerUrl(d);
     if (!url) return;
-    playWebPage(url, d.t + ' · Trailer', d);
+    var requestId = ++trailerResolveId;
+    clearTimeout(trailerResolveTimer);
+    if (trailerRequest) { try { trailerRequest.abort(); } catch (e) {} }
+    toast('Opening player…');
+    var req = new XMLHttpRequest();
+    trailerRequest = req;
+    req.open('GET', url, true);
+    req.timeout = 10000;
+    req.onreadystatechange = function () {
+      if (req.readyState !== 4) return;
+      if (trailerRequest === req) trailerRequest = null;
+      clearTimeout(trailerResolveTimer);
+      if (requestId !== trailerResolveId || screen !== 'details') return;
+      var data = null;
+      try { data = JSON.parse(req.responseText || '{}'); } catch (e) {}
+      if (req.status < 200 || req.status >= 300 || !data || !/^https:\/\//i.test(data.url || '')) {
+        toast('The player is unavailable right now.');
+        return;
+      }
+      playWebPage(data.url, d.t + ' · Trailer', d);
+    };
+    req.onerror = req.ontimeout = function () {
+      if (trailerRequest === req) trailerRequest = null;
+      clearTimeout(trailerResolveTimer);
+      if (requestId === trailerResolveId && screen === 'details') toast('Couldn’t open the player. Try again.');
+    };
+    trailerResolveTimer = setTimeout(function () {
+      if (requestId !== trailerResolveId || screen !== 'details') return;
+      if (trailerRequest === req) trailerRequest = null;
+      try { req.abort(); } catch (e) {}
+      toast('Couldn’t open the player. Try again.');
+    }, 11000);
+    req.send();
   }
 
   /* ================= trailer web page ================= */

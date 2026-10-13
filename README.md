@@ -26,7 +26,7 @@ Live at https://chigala.github.io/verge-tv/
 |---|---|---|
 | `TMDB_TOKEN` | GitHub secret and/or `.env` | TMDB "API Read Access Token" (or `TMDB_API_KEY` for the short v3 key). Required. |
 | `TMDB_SEARCH_KEY` | GitHub variable and/or `.env` | Optional short v3 key the TV uses to search all of TMDB and load any title, season or episode. Public: it ends up in the catalog. Without it, search covers only the catalog and series show only their latest 3 seasons. |
-| `TRAILER_API_URL` | GitHub Actions secret | Public Cloudflare Worker URL including the private `ACCESS_PATH`. **Play** uses its fast `/embed` redirect; there is no YouTube fallback. |
+| `TRAILER_API_URL` | GitHub Actions secret | Public Cloudflare Worker URL including the private `ACCESS_PATH`. **Play** uses its fast `/player` lookup; there is no YouTube fallback. |
 | `TRAILER_URL_TEMPLATE` | Cloudflare Worker secret only | Sensitive upstream page template. Never put it in GitHub, Pages runtime data, `.env`, commands, logs or support messages. Supported placeholders: `{tmdb}` `{imdb}` `{type}` `{title}` `{year}`; with none, the TMDB number is added to the end. |
 
 ```bash
@@ -52,12 +52,13 @@ never receives the sensitive upstream template.
 
 ## Private trailer gateway
 
-The active TV path is intentionally small: `/embed` validates the title fields,
-fills the private `TRAILER_URL_TEMPLATE`, and immediately redirects the iframe
-to the player page. The player handles playback while the TV app sends remote
-commands through its documented `postMessage` API. The template stays out of
-Git and the public Pages artifact, while the old 60-second resolution wait is
-removed.
+The active TV path is intentionally small: `/player` validates the title
+fields, fills the private `TRAILER_URL_TEMPLATE`, and returns the completed URL
+without fetching it. GitHub Pages then navigates the iframe directly, preserving
+the normal page referrer expected by browser-oriented players. The player
+handles playback while the TV app sends remote commands through its documented
+`postMessage` API. The template stays out of Git and the public Pages artifact,
+while the old 60-second resolution wait is removed.
 
 The Worker also retains the older `/resolve` and `/media` implementation for
 diagnostics, but the Pages app no longer calls it. That legacy path can inspect
