@@ -649,6 +649,18 @@ async function resolveMediaInBrowser(sourceUrl, env) {
           pendingInspections,
         );
       });
+      target.on('websocket', (socket) => {
+        socket.on('framereceived', (event) => {
+          try {
+            const baseUrl = socket.url() || target.url() || sourceUrl;
+            const value = typeof event.payload === 'string' ? event.payload : '';
+            const media = extractMediaUrl(value, baseUrl) || extractEncodedMediaUrl(value, baseUrl);
+            if (!media) return;
+            const kind = /\.m3u8(?:[?#]|$)/i.test(media) ? 'hls' : 'video';
+            addBrowserCandidate(candidates, media, kind, { Referer: target.url() || sourceUrl });
+          } catch (_) {}
+        });
+      });
       target.on('close', () => pages.delete(target));
     };
 
@@ -666,9 +678,11 @@ async function resolveMediaInBrowser(sourceUrl, env) {
     await delay(1500);
     for (let attempt = 0; attempt < 5 && !candidates.length; attempt++) {
       if (await browserShowsChallenge(pages)) throw codedError('SOURCE_REQUIRES_INTERACTION', 409);
-      await activateBrowserPlayers(pages);
+      await inspectBrowserDom(pages, candidates);
+      await activateBrowserPlayers(pages, attempt);
       await delay(attempt === 0 ? 2500 : 3500);
     }
+    await inspectBrowserDom(pages, candidates);
     await browserWithin(Promise.allSettled(Array.from(pendingInspections)), 2500);
     if (await browserShowsChallenge(pages)) throw codedError('SOURCE_REQUIRES_INTERACTION', 409);
 
@@ -690,6 +704,40 @@ async function resolveMediaInBrowser(sourceUrl, env) {
   } finally {
     if (page) { try { await browserWithin(page.close(), 1500); } catch (_) {} }
     if (browser) { try { await browserWithin(browser.close(), 2000); } catch (_) {} }
+  }
+}
+
+async function inspectBrowserDom(pages, candidates) {
+  for (const page of pages) {
+    let frames = [];
+    try { frames = page.frames(); } catch (_) { continue; }
+    for (const frame of frames) {
+      if (/(?:captcha|challenge|recaptcha|hcaptcha|challenge-platform)/i.test(frame.url() || '')) continue;
+      try {
+        const snapshot = await browserWithin(frame.evaluate(() => {
+          const media = Array.from(document.querySelectorAll('video,source')).map((element) =>
+            element.currentSrc || element.src || element.getAttribute('src') || ''
+          );
+          const scripts = Array.from(document.scripts).map((script) => script.textContent || '').join('\n');
+          return { media, scripts: scripts.slice(0, 512 * 1024) };
+        }), 1500);
+        if (snapshot === BROWSER_TIMEOUT || !snapshot) continue;
+        for (const value of snapshot.media || []) {
+          const kind = browserMediaKind(value, '');
+          if (kind) addBrowserCandidate(candidates, value, kind, { Referer: frame.url() || page.url() });
+        }
+        const encoded = String(snapshot.scripts || '');
+        const media = extractMediaUrl(encoded, frame.url()) || extractEncodedMediaUrl(encoded, frame.url());
+        if (media) {
+          addBrowserCandidate(
+            candidates,
+            media,
+            /\.m3u8(?:[?#]|$)/i.test(media) ? 'hls' : 'video',
+            { Referer: frame.url() || page.url() },
+          );
+        }
+      } catch (_) {}
+    }
   }
 }
 
@@ -829,7 +877,14 @@ async function browserShowsChallenge(pages) {
   return false;
 }
 
-async function activateBrowserPlayers(pages) {
+async function activateBrowserPlayers(pages, attempt) {
+  const serverSelectors = [
+    '[data-hash]',
+    '[data-server]',
+    '[data-source]',
+    '[class*="server" i]',
+    '[class*="source" i]',
+  ];
   const selectors = [
     '.vjs-big-play-button',
     '.jw-display-icon-container',
@@ -839,7 +894,11 @@ async function activateBrowserPlayers(pages) {
     'button[aria-label*="play" i]',
     '[title*="play" i]',
     '[class*="play-button" i]',
+    '[class*="play_btn" i]',
+    '[class*="play-btn" i]',
+    '[class~="play" i]',
     '[id*="play" i]',
+    '[data-action*="play" i]',
     'button:has-text("Play")',
   ];
   for (const page of pages) {
@@ -853,6 +912,20 @@ async function activateBrowserPlayers(pages) {
           for (const video of videos) video.muted = true;
         }), 1500);
       } catch (_) {}
+
+      for (const selector of serverSelectors) {
+        try {
+          const choices = frame.locator(selector);
+          const count = Math.min(await choices.count(), 8);
+          if (!count) continue;
+          const target = choices.nth(attempt % count);
+          if (await target.isVisible()) {
+            await target.click({ force: true, timeout: 1200 });
+            await delay(250);
+            break;
+          }
+        } catch (_) {}
+      }
 
       let clicked = false;
       for (const selector of selectors) {
@@ -873,6 +946,23 @@ async function activateBrowserPlayers(pages) {
           }
         } catch (_) {}
       }
+      if (!clicked) {
+        try {
+          const size = await browserWithin(frame.evaluate(() => ({
+            width: Math.max(document.documentElement.clientWidth || 0, document.body && document.body.clientWidth || 0),
+            height: Math.max(document.documentElement.clientHeight || 0, document.body && document.body.clientHeight || 0),
+          })), 1000);
+          if (size !== BROWSER_TIMEOUT && size && size.width > 40 && size.height > 40) {
+            await frame.locator('body').click({
+              position: { x: Math.floor(size.width / 2), y: Math.floor(size.height / 2) },
+              force: true,
+              timeout: 1200,
+            });
+            clicked = true;
+          }
+        } catch (_) {}
+      }
+      try { await frame.locator('body').press(attempt % 2 ? 'Space' : 'Enter', { timeout: 800 }); } catch (_) {}
 
       try {
         await browserWithin(frame.evaluate(() => {
