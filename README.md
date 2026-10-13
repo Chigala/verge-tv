@@ -1,24 +1,46 @@
-# Verge Headlines for VIDAA TV
+# Movie Catalog for VIDAA TV
 
-A remote-friendly headlines reader for The Verge, plus a small installer that
-puts it (or any web app) in a Hisense VIDAA TV's Apps list.
+A remote-friendly catalog of movies and series for Hisense VIDAA TVs. The rows
+show the latest US movies and series by category; search finds any movie or
+series from anywhere. Each title has a details page with trailers, cast, "more
+like this" and where to watch in Nigeria, and series have seasons and episodes.
+A small installer puts it in the TV's Apps list.
 
 ```
-docs/index.html        the TV app (arrow keys, OK, Back, number keys 1-8, RED = refresh)
-docs/feeds/*.json      headlines, rebuilt by feeds.py
-feeds.py               fetches The Verge's public feeds into docs/feeds/
-server.py              runs the app from this computer (http://<your-ip>:8787)
-installer/             DNS + web server that lets the TV install the app
-.github/workflows/     refreshes the headlines every 30 min when hosted on GitHub Pages
+docs/index.html            the TV app (arrow keys, OK, Back, number keys in search)
+docs/data/                 the catalog, rebuilt daily by movies/build_catalog.py (about 3 minutes)
+docs/movies/index.html     redirect for TVs that installed the old /movies/ address
+movies/build_catalog.py    builds docs/data/ from TMDB
+installer/                 DNS + web server that lets the TV install the app
+.github/workflows/         rebuilds the catalog daily on GitHub
+.env                       local settings (gitignored), read by build_catalog.py
 ```
 
-## Run the app from this computer
+Live at https://chigala.github.io/verge-tv/
+
+## Settings
+
+| Setting | Where | What |
+|---|---|---|
+| `TMDB_TOKEN` | GitHub secret and/or `.env` | TMDB "API Read Access Token" (or `TMDB_API_KEY` for the short v3 key). Required. |
+| `TMDB_SEARCH_KEY` | GitHub variable and/or `.env` | Optional short v3 key the TV uses to search all of TMDB and load any title, season or episode. Public: it ends up in the catalog. Without it, search covers only the catalog and series show only their latest 3 seasons. |
+| `TRAILER_URL_TEMPLATE` | GitHub variable and/or `.env` | Optional direct video link per title; when set, **Play trailer** uses only this (no YouTube fallback). Placeholders: `{tmdb}` `{imdb}` `{type}` `{title}` `{year}` `{yt}`; with none, the TMDB number is added to the end. |
 
 ```bash
-python3 server.py
+gh secret set TMDB_TOKEN --repo Chigala/verge-tv
+gh variable set TMDB_SEARCH_KEY --repo Chigala/verge-tv
+gh variable set TRAILER_URL_TEMPLATE --repo Chigala/verge-tv --body 'https://example.com/{type}/{tmdb}.mp4'
+gh workflow run update-movies.yml --repo Chigala/verge-tv
 ```
 
-Open the address it prints in the TV's Browser. The computer must stay on.
+## Build and preview on this computer
+
+```bash
+python3 movies/build_catalog.py
+python3 -m http.server 8000 --directory docs
+```
+
+Then open http://localhost:8000 and use the arrow keys, Enter and Escape.
 
 ## Install it into the TV's Apps list
 
@@ -37,7 +59,7 @@ You need: the TV and computer on the same network, and a TV that lets you set DN
 5. Set the TV's DNS back to **automatic**, then restart the TV.
 6. Press Ctrl+C in the installer window.
 
-The app lives at https://chigala.github.io/verge-tv/ by default; pass `--app-url` and `--name` to install a different web app.
+The installer uses https://chigala.github.io/verge-tv/ by default; pass `--app-url` and `--name` to install a different web app.
 To remove it later, repeat the steps and press **Uninstall**.
 
 If the page says the install function is not found, your TV's firmware blocks
@@ -45,20 +67,4 @@ custom installs; use a Browser bookmark instead.
 
 Installer approach from [camellan/vidaa-appstore](https://github.com/camellan/vidaa-appstore).
 
-## Movie catalog (docs/movies/)
-
-A TV movie catalog at https://chigala.github.io/verge-tv/movies/ :
-TMDB rows, details, official YouTube trailers, where to watch in Nigeria,
-and public-domain films from the Internet Archive that play in full in the
-TV's native video player.
-
-`movies/build_catalog.py` builds `docs/movies/data/` daily via
-`.github/workflows/update-movies.yml`. It needs a TMDB key stored as the
-GitHub secret `TMDB_TOKEN` (API Read Access Token) or `TMDB_API_KEY`;
-without one it builds only the public-domain rows.
-
-Install on the TV:
-
-```bash
-sudo python3 installer/vidaa_installer.py --app-url https://chigala.github.io/verge-tv/movies/ --name "Movie Catalog"
-```
+Catalog data from [TMDB](https://www.themoviedb.org/) (this product uses the TMDB API but is not endorsed or certified by TMDB) and JustWatch.

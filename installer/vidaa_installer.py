@@ -14,7 +14,7 @@ Same approach as github.com/camellan/vidaa-appstore, rewritten here with the
 standard library only. Needs admin rights because ports 53/80/443 are
 privileged:
 
-  sudo python3 vidaa_installer.py                          (installs Verge Headlines)
+  sudo python3 vidaa_installer.py                          (installs Movie Catalog)
   sudo python3 vidaa_installer.py --app-url <url> --name <name>   (any other web app)
 
 Stop it with Ctrl+C once the app is installed, and set the TV's DNS back to
@@ -40,8 +40,7 @@ BACKUP_DIR = os.path.join(HERE, "backups")
 HOSTNAMES = {"vidaahub.com", "www.vidaahub.com"}
 
 DEFAULT_APP_URL = "https://chigala.github.io/verge-tv/"
-DEFAULT_ICON = ("https://platform.theverge.com/wp-content/uploads/sites/2/2025/01/"
-                "verge-rss-large_80b47e.png?w=300&h=300&crop=1")
+DEFAULT_ICON = "https://chigala.github.io/verge-tv/icon.png"
 
 
 def log(msg):
@@ -210,7 +209,7 @@ def build_page(app):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--app-url", default=DEFAULT_APP_URL, help="web address of the app to install")
-    ap.add_argument("--name", default="Verge Headlines", help="name shown in the TV's Apps list")
+    ap.add_argument("--name", default="Movie Catalog", help="name shown in the TV's Apps list")
     ap.add_argument("--icon", default=DEFAULT_ICON, help="PNG icon URL, 220-400px square")
     ap.add_argument("--ip", default=None, help="this computer's LAN IP (auto-detected)")
     ap.add_argument("--upstream", default="1.1.1.1", help="resolver for every other lookup")
