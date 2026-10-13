@@ -44,3 +44,21 @@ If the page says the install function is not found, your TV's firmware blocks
 custom installs; use a Browser bookmark instead.
 
 Installer approach from [camellan/vidaa-appstore](https://github.com/camellan/vidaa-appstore).
+
+## Movie catalog (docs/movies/)
+
+A TV movie catalog at https://chigala.github.io/verge-tv/movies/ :
+TMDB rows, details, official YouTube trailers, where to watch in Nigeria,
+and public-domain films from the Internet Archive that play in full in the
+TV's native video player.
+
+`movies/build_catalog.py` builds `docs/movies/data/` daily via
+`.github/workflows/update-movies.yml`. It needs a TMDB key stored as the
+GitHub secret `TMDB_TOKEN` (API Read Access Token) or `TMDB_API_KEY`;
+without one it builds only the public-domain rows.
+
+Install on the TV:
+
+```bash
+sudo python3 installer/vidaa_installer.py --app-url https://chigala.github.io/verge-tv/movies/ --name "Movie Catalog"
+```
