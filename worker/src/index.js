@@ -75,19 +75,30 @@ function configuredPlayerUrl(request, env) {
   if (type === 'tv' && !/^\d{1,5}$/.test(episode)) throw codedError('INVALID_EPISODE', 400);
   if (startAt && !/^\d{1,10}$/.test(startAt)) throw codedError('INVALID_START_TIME', 400);
 
-  const template = String(env.TRAILER_URL_TEMPLATE || '');
+  const template = String(env.TRAILER_URL_TEMPLATE || '').trim();
+  const hasTemplateFields = /\{\w+\}/.test(template);
   const hasSeasonField = /\{season\}/.test(template);
   const hasEpisodeField = /\{episode\}/.test(template);
   if (type === 'tv' && hasSeasonField !== hasEpisodeField) throw codedError('INCOMPLETE_EPISODE_TEMPLATE', 500);
 
-  const destination = assertSafeUpstreamUrl(fillTemplate(template, {
-    type, tmdb, imdb, title, year, season, episode,
-  }), env);
-  if (type === 'tv' && !/\{type\}/.test(template)) {
-    destination.pathname = destination.pathname.replace(/\/movie(?=\/|$)/i, '/tv');
-  }
-  if (type === 'tv' && !hasSeasonField) {
-    destination.pathname = destination.pathname.replace(/\/+$/, '') + '/' + season + '/' + episode;
+  let destination;
+  if (!hasTemplateFields) {
+    destination = assertSafeUpstreamUrl(template, env);
+    let path = destination.pathname.replace(/\/+$/, '');
+    const existingKind = path.match(/\/(movie|tv)$/i);
+    if (existingKind) path = path.slice(0, -existingKind[0].length);
+    destination.pathname = path + '/' + type + '/' + tmdb +
+      (type === 'tv' ? '/' + season + '/' + episode : '');
+  } else {
+    destination = assertSafeUpstreamUrl(fillTemplate(template, {
+      type, tmdb, imdb, title, year, season, episode,
+    }), env);
+    if (type === 'tv' && !/\{type\}/.test(template)) {
+      destination.pathname = destination.pathname.replace(/\/movie(?=\/|$)/i, '/tv');
+    }
+    if (type === 'tv' && !hasSeasonField) {
+      destination.pathname = destination.pathname.replace(/\/+$/, '') + '/' + season + '/' + episode;
+    }
   }
   if (startAt) destination.searchParams.set('startAt', startAt);
   return destination;

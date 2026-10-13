@@ -27,7 +27,7 @@ Live at https://chigala.github.io/verge-tv/
 | `TMDB_TOKEN` | GitHub secret and/or `.env` | TMDB "API Read Access Token" (or `TMDB_API_KEY` for the short v3 key). Required. |
 | `TMDB_SEARCH_KEY` | GitHub variable and/or `.env` | Optional short v3 key the TV uses to search all of TMDB and load any title, season or episode. Public: it ends up in the catalog. Without it, search covers only the catalog and series show only their latest 3 seasons. |
 | `TRAILER_API_URL` | GitHub Actions secret | Public Cloudflare Worker URL including the private `ACCESS_PATH`. **Play** uses its fast `/player` lookup; there is no YouTube fallback. |
-| `TRAILER_URL_TEMPLATE` | Cloudflare Worker secret only | Sensitive upstream player template. Never put it in GitHub, Pages runtime data, `.env`, commands, logs or support messages. Supported placeholders: `{tmdb}` `{imdb}` `{type}` `{title}` `{year}` `{season}` `{episode}`. For TV, the gateway automatically appends `/season/episode` when those two placeholders are omitted. |
+| `TRAILER_URL_TEMPLATE` | Cloudflare Worker secret only | Private player base URL. The gateway adds `/movie/{tmdb}` or `/tv/{tmdb}/{season}/{episode}`. Existing templates remain supported with `{tmdb}` `{imdb}` `{type}` `{title}` `{year}` `{season}` `{episode}`. Never put the real value in Git, Pages data, command arguments, logs or support messages. |
 
 ```bash
 gh secret set TMDB_TOKEN --repo Chigala/verge-tv

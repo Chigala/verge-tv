@@ -62,6 +62,51 @@ test('returns a player URL without fetching it so Pages remains the iframe refer
   assert.deepEqual(await response.json(), { url: 'https://player.example.invalid/movie/533533' });
 });
 
+test('builds the movie path from a base URL secret', async () => {
+  const env = {
+    ACCESS_PATH: 'private_test_path_1234',
+    APP_ORIGIN: 'https://chigala.github.io',
+    TRAILER_URL_TEMPLATE: 'https://player.example.invalid',
+  };
+  const response = await handleRequest(new Request(
+    'https://worker.example.invalid/private_test_path_1234/player?type=movie&tmdb=533533',
+    { headers: { Origin: env.APP_ORIGIN } },
+  ), env);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { url: 'https://player.example.invalid/movie/533533' });
+});
+
+test('builds the TV path from a base URL secret', async () => {
+  const env = {
+    ACCESS_PATH: 'private_test_path_1234',
+    APP_ORIGIN: 'https://chigala.github.io',
+    TRAILER_URL_TEMPLATE: 'https://player.example.invalid/',
+  };
+  const response = await handleRequest(new Request(
+    'https://worker.example.invalid/private_test_path_1234/player?type=tv&tmdb=66732&season=5&episode=3',
+    { headers: { Origin: env.APP_ORIGIN } },
+  ), env);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { url: 'https://player.example.invalid/tv/66732/5/3' });
+});
+
+test('does not duplicate an existing legacy movie suffix', async () => {
+  const env = {
+    ACCESS_PATH: 'private_test_path_1234',
+    APP_ORIGIN: 'https://chigala.github.io',
+    TRAILER_URL_TEMPLATE: 'https://player.example.invalid/movie/',
+  };
+  const response = await handleRequest(new Request(
+    'https://worker.example.invalid/private_test_path_1234/player?type=movie&tmdb=533533',
+    { headers: { Origin: env.APP_ORIGIN } },
+  ), env);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { url: 'https://player.example.invalid/movie/533533' });
+});
+
 test('appends season and episode to a TV player template', async () => {
   const env = {
     ACCESS_PATH: 'private_test_path_1234',
