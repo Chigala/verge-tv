@@ -26,7 +26,7 @@ Live at https://chigala.github.io/verge-tv/
 |---|---|---|
 | `TMDB_TOKEN` | GitHub secret and/or `.env` | TMDB "API Read Access Token" (or `TMDB_API_KEY` for the short v3 key). Required. |
 | `TMDB_SEARCH_KEY` | GitHub variable and/or `.env` | Optional short v3 key the TV uses to search all of TMDB and load any title, season or episode. Public: it ends up in the catalog. Without it, search covers only the catalog and series show only their latest 3 seasons. |
-| `TRAILER_API_URL` | GitHub Actions secret | Public Cloudflare Worker URL including the private `ACCESS_PATH`. This is the only source used by **Play**; there is no YouTube fallback. |
+| `TRAILER_API_URL` | GitHub Actions secret | Public Cloudflare Worker URL including the private `ACCESS_PATH`. **Play** uses its fast `/embed` redirect; there is no YouTube fallback. |
 | `TRAILER_URL_TEMPLATE` | Cloudflare Worker secret only | Sensitive upstream page template. Never put it in GitHub, Pages runtime data, `.env`, commands, logs or support messages. Supported placeholders: `{tmdb}` `{imdb}` `{type}` `{title}` `{year}`; with none, the TMDB number is added to the end. |
 
 ```bash
@@ -50,9 +50,20 @@ catalog works but the **Play** button is hidden. For GitHub Pages, set
 the deployment workflow writes only the Worker endpoint into the artifact. It
 never receives the sensitive upstream template.
 
-## Private trailer Worker
+## Private trailer gateway
 
-The Worker accepts a movie/TV identifier, fetches the configured source page,
+The active TV path is intentionally small: `/embed` validates the title fields,
+fills the private `TRAILER_URL_TEMPLATE`, and immediately redirects the iframe
+to the player page. The player handles playback while the TV app sends remote
+commands through its documented `postMessage` API. The template stays out of
+Git and the public Pages artifact, while the old 60-second resolution wait is
+removed.
+
+The Worker also retains the older `/resolve` and `/media` implementation for
+diagnostics, but the Pages app no longer calls it. That legacy path can inspect
+plain HLS/MP4 sources and deliberately does not bypass CAPTCHA, login or DRM.
+
+The legacy resolver accepts a movie/TV identifier, fetches the configured source page,
 finds a plain HLS/MP4 media URL, encrypts it into a short-lived opaque token,
 and proxies the manifest and media back to the TV. It rewrites variant streams,
 segments, audio, subtitles, initialization files and key URIs. It deliberately

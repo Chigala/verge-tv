@@ -23,6 +23,26 @@ test('fills the supported source template fields', () => {
   assert.equal(result, 'https://example.invalid/movie/123?imdb=tt1234567');
 });
 
+test('redirects an embed directly to the configured player without resolving media', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async () => { throw new Error('embed redirect must not fetch upstream'); };
+
+  const env = {
+    ACCESS_PATH: 'private_test_path_1234',
+    APP_ORIGIN: 'https://chigala.github.io',
+    TRAILER_URL_TEMPLATE: 'https://player.example.invalid/{type}/{tmdb}',
+  };
+  const response = await handleRequest(new Request(
+    'https://worker.example.invalid/private_test_path_1234/embed?type=movie&tmdb=533533&startAt=90',
+    { headers: { Origin: env.APP_ORIGIN }, redirect: 'manual' },
+  ), env);
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), 'https://player.example.invalid/movie/533533?startAt=90');
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+});
+
 test('finds an escaped HLS URL without contacting it', () => {
   const page = String.raw`{"file":"https:\/\/media.example.invalid\/trailers\/master.m3u8?token=fake\u0026v=1"}`;
   assert.equal(

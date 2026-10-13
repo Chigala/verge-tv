@@ -27,7 +27,7 @@ export async function handleRequest(request, env) {
   }
 
   const accessPath = normalizeAccessPath(env.ACCESS_PATH);
-  if (!accessPath || !env.TRAILER_URL_TEMPLATE || !env.PLAYBACK_TOKEN_SECRET) {
+  if (!accessPath || !env.TRAILER_URL_TEMPLATE) {
     return safeError('WORKER_NOT_CONFIGURED', 503, cors);
   }
 
@@ -35,15 +35,57 @@ export async function handleRequest(request, env) {
   if (requestUrl.pathname === rootPath + '/health') {
     return json({ ok: true }, 200, cors);
   }
+  if (requestUrl.pathname === rootPath + '/embed') {
+    if (!originAllowed(request, env)) return safeError('ORIGIN_NOT_ALLOWED', 403, cors);
+    return redirectToPlayer(request, env, cors);
+  }
   if (requestUrl.pathname === rootPath + '/resolve') {
+    if (!env.PLAYBACK_TOKEN_SECRET) return safeError('WORKER_NOT_CONFIGURED', 503, cors);
     if (!originAllowed(request, env)) return safeError('ORIGIN_NOT_ALLOWED', 403, cors);
     return resolveTrailer(request, env, rootPath, cors);
   }
   if (requestUrl.pathname.indexOf(rootPath + '/media/') === 0) {
+    if (!env.PLAYBACK_TOKEN_SECRET) return safeError('WORKER_NOT_CONFIGURED', 503, cors);
     if (!originAllowed(request, env)) return safeError('ORIGIN_NOT_ALLOWED', 403, cors);
     return proxyMedia(request, env, rootPath, cors);
   }
   return safeError('NOT_FOUND', 404, cors);
+}
+
+function redirectToPlayer(request, env, cors) {
+  const url = new URL(request.url);
+  const type = url.searchParams.get('type');
+  const tmdb = url.searchParams.get('tmdb') || '';
+  const imdb = url.searchParams.get('imdb') || '';
+  const title = (url.searchParams.get('title') || '').slice(0, 300);
+  const year = url.searchParams.get('year') || '';
+  const startAt = url.searchParams.get('startAt') || url.searchParams.get('t') || '';
+
+  if (type !== 'movie' && type !== 'tv') return safeError('INVALID_MEDIA_TYPE', 400, cors);
+  if (!/^\d{1,12}$/.test(tmdb)) return safeError('INVALID_TMDB_ID', 400, cors);
+  if (imdb && !/^tt\d{5,12}$/i.test(imdb)) return safeError('INVALID_IMDB_ID', 400, cors);
+  if (year && !/^\d{4}$/.test(year)) return safeError('INVALID_YEAR', 400, cors);
+  if (startAt && !/^\d{1,10}$/.test(startAt)) return safeError('INVALID_START_TIME', 400, cors);
+
+  let destination;
+  try {
+    destination = assertSafeUpstreamUrl(
+      fillTemplate(env.TRAILER_URL_TEMPLATE, { type, tmdb, imdb, title, year }),
+      env,
+    );
+    if (startAt) destination.searchParams.set('startAt', startAt);
+  } catch (error) {
+    return safeError(errorCode(error, 'INVALID_TEMPLATE'), 500, cors);
+  }
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: destination.toString(),
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+    },
+  });
 }
 
 async function resolveTrailer(request, env, rootPath, cors) {
