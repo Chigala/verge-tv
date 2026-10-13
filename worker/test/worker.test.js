@@ -4,6 +4,7 @@ import {
   browserCandidateScore,
   browserMediaKind,
   browserPlaybackHeaders,
+  browserResourceKind,
   extractMediaUrl,
   fillTemplate,
   handleRequest,
@@ -58,6 +59,8 @@ test('Browser Run discovery selects playlists and full videos, not transport seg
   assert.equal(browserMediaKind('https://media.example.invalid/watch', 'application/vnd.apple.mpegurl'), 'hls');
   assert.equal(browserMediaKind('https://media.example.invalid/trailer.mp4', ''), 'video');
   assert.equal(browserMediaKind('https://media.example.invalid/segment.ts', 'video/mp2t'), '');
+  assert.equal(browserResourceKind('https://media.example.invalid/manifest.mpd', ''), 'dash');
+  assert.equal(browserResourceKind('https://media.example.invalid/chunk.m4s', ''), 'segment');
   assert.ok(
     browserCandidateScore('https://media.example.invalid/trailer/master.m3u8', 'hls') >
     browserCandidateScore('https://ads.example.invalid/preroll/master.m3u8', 'hls'),

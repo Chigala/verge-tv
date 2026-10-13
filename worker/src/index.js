@@ -150,20 +150,32 @@ async function resolveMediaInBrowser(sourceUrl, env) {
   let page;
   try {
     browser = await launchBrowser(env.BROWSER);
-    page = await browser.newPage();
     const candidates = [];
+    const evidence = {};
+    const pages = new Set();
     const pendingInspections = new Set();
 
-    page.on('request', (request) => {
-      const inspection = inspectBrowserRequest(request, candidates).catch(() => {});
-      pendingInspections.add(inspection);
-      inspection.finally(() => pendingInspections.delete(inspection));
-    });
-    page.on('response', (response) => {
-      const inspection = inspectBrowserResponse(response, candidates).catch(() => {});
-      pendingInspections.add(inspection);
-      inspection.finally(() => pendingInspections.delete(inspection));
-    });
+    const watchPage = (target) => {
+      if (!target || pages.has(target)) return;
+      pages.add(target);
+      target.on('request', (request) => {
+        trackBrowserInspection(
+          inspectBrowserRequest(request, candidates, evidence).catch(() => {}),
+          pendingInspections,
+        );
+      });
+      target.on('response', (response) => {
+        trackBrowserInspection(
+          inspectBrowserResponse(response, candidates, evidence).catch(() => {}),
+          pendingInspections,
+        );
+      });
+      target.on('close', () => pages.delete(target));
+    };
+
+    page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    page.context().on('page', watchPage);
+    watchPage(page);
 
     let navigationFailed = false;
     try {
@@ -173,16 +185,18 @@ async function resolveMediaInBrowser(sourceUrl, env) {
     }
 
     await delay(1500);
-    if (await browserShowsChallenge(page)) throw codedError('SOURCE_REQUIRES_INTERACTION', 409);
-    if (!candidates.length) {
-      await activateBrowserPlayers(page);
-      await delay(9000);
+    for (let attempt = 0; attempt < 5 && !candidates.length; attempt++) {
+      if (await browserShowsChallenge(pages)) throw codedError('SOURCE_REQUIRES_INTERACTION', 409);
+      await activateBrowserPlayers(pages);
+      await delay(attempt === 0 ? 2500 : 3500);
     }
     await Promise.allSettled(Array.from(pendingInspections));
-    if (await browserShowsChallenge(page)) throw codedError('SOURCE_REQUIRES_INTERACTION', 409);
+    if (await browserShowsChallenge(pages)) throw codedError('SOURCE_REQUIRES_INTERACTION', 409);
 
     const selected = selectBrowserCandidate(candidates);
     if (!selected) {
+      if (evidence.dash) throw codedError('UNSUPPORTED_STREAM_FORMAT', 415);
+      if (evidence.segment) throw codedError('PLAYLIST_NOT_OBSERVED', 502);
       throw codedError(navigationFailed ? 'BROWSER_NAVIGATION_FAILED' : 'NO_PLAYABLE_MEDIA', navigationFailed ? 502 : 404);
     }
     assertSafeUpstreamUrl(selected.url, env);
@@ -200,6 +214,11 @@ async function resolveMediaInBrowser(sourceUrl, env) {
   }
 }
 
+function trackBrowserInspection(inspection, pendingInspections) {
+  pendingInspections.add(inspection);
+  inspection.finally(() => pendingInspections.delete(inspection));
+}
+
 let browserLibrary;
 
 async function launchBrowser(binding) {
@@ -208,16 +227,18 @@ async function launchBrowser(binding) {
   return launch(binding);
 }
 
-async function inspectBrowserRequest(request, candidates) {
+async function inspectBrowserRequest(request, candidates, evidence) {
+  noteBrowserEvidence(evidence, request.url(), '');
   const kind = browserMediaKind(request.url(), '');
   if (!kind) return;
   addBrowserCandidate(candidates, request.url(), kind, await readBrowserHeaders(request));
 }
 
-async function inspectBrowserResponse(response, candidates) {
+async function inspectBrowserResponse(response, candidates, evidence) {
   const url = response.url();
   const responseHeaders = await readBrowserHeaders(response);
   const contentType = String(responseHeaders['content-type'] || '');
+  noteBrowserEvidence(evidence, url, contentType);
   const requestHeaders = await readBrowserHeaders(response.request());
   const kind = browserMediaKind(url, contentType);
   if (kind) {
@@ -249,9 +270,22 @@ async function readBrowserHeaders(source) {
 }
 
 export function browserMediaKind(url, contentType) {
+  const kind = browserResourceKind(url, contentType);
+  if (kind === 'hls' || kind === 'video') return kind;
+  return '';
+}
+
+export function browserResourceKind(url, contentType) {
   if (/\.m3u8(?:[?#]|$)/i.test(url || '') || /(?:mpegurl|vnd\.apple\.mpegurl)/i.test(contentType || '')) return 'hls';
   if (/\.(?:mp4|m4v|webm|mov)(?:[?#]|$)/i.test(url || '') || /video\/(?:mp4|webm|quicktime)/i.test(contentType || '')) return 'video';
+  if (/\.mpd(?:[?#]|$)/i.test(url || '') || /application\/dash\+xml/i.test(contentType || '')) return 'dash';
+  if (/\.(?:m4s|ts|aac|m4a|cmfv|cmfa)(?:[?#]|$)/i.test(url || '') || /video\/mp2t/i.test(contentType || '')) return 'segment';
   return '';
+}
+
+function noteBrowserEvidence(evidence, url, contentType) {
+  const kind = browserResourceKind(url, contentType);
+  if (kind) evidence[kind] = true;
 }
 
 function addBrowserCandidate(candidates, url, kind, requestHeaders) {
@@ -293,47 +327,84 @@ export function browserPlaybackHeaders(input) {
   return output;
 }
 
-async function browserShowsChallenge(page) {
-  const frames = page.frames();
-  for (const frame of frames) {
-    if (/(?:captcha|challenge|recaptcha|hcaptcha)/i.test(frame.url() || '')) return true;
-    try {
-      const blocked = await frame.evaluate(() => {
-        const text = String(document.body && document.body.innerText || '').slice(0, 10000).toLowerCase();
-        return text.includes('confirm you are not a robot') ||
-          text.includes('verify you are human') ||
-          !!document.querySelector('.g-recaptcha, .h-captcha, iframe[src*="captcha"], [class*="captcha"]');
-      });
-      if (blocked) return true;
-    } catch (_) {}
+async function browserShowsChallenge(pages) {
+  for (const page of pages) {
+    let frames = [];
+    try { frames = page.frames(); } catch (_) { continue; }
+    for (const frame of frames) {
+      if (/(?:captcha|challenge|recaptcha|hcaptcha|challenge-platform)/i.test(frame.url() || '')) return true;
+      try {
+        const blocked = await frame.evaluate(() => {
+          const text = String(document.body && document.body.innerText || '').slice(0, 10000).toLowerCase();
+          return text.includes('confirm you are not a robot') ||
+            text.includes('verify you are human') ||
+            text.includes('checking your browser') ||
+            text.includes('security verification') ||
+            !!document.querySelector('.g-recaptcha, .h-captcha, .cf-turnstile, iframe[src*="captcha"], iframe[src*="challenges.cloudflare.com"], [class*="captcha"], input[name="cf-turnstile-response"]');
+        });
+        if (blocked) return true;
+      } catch (_) {}
+    }
   }
   return false;
 }
 
-async function activateBrowserPlayers(page) {
-  const frames = page.frames();
-  for (const frame of frames) {
-    if (/(?:captcha|challenge|recaptcha|hcaptcha)/i.test(frame.url() || '')) continue;
-    try {
-      await frame.evaluate(() => {
-        const videos = Array.from(document.querySelectorAll('video'));
-        for (const video of videos) {
-          video.muted = true;
-          const playing = video.play();
-          if (playing && playing.catch) playing.catch(() => {});
-        }
-        const selectors = [
-          '.vjs-big-play-button',
-          '.jw-icon-playback',
-          '[data-plyr="play"]',
-          'button[aria-label*="play" i]',
-        ];
-        for (const selector of selectors) {
-          const button = document.querySelector(selector);
-          if (button) { button.click(); break; }
-        }
-      });
-    } catch (_) {}
+async function activateBrowserPlayers(pages) {
+  const selectors = [
+    '.vjs-big-play-button',
+    '.jw-display-icon-container',
+    '.jw-icon-playback',
+    '.plyr__control--overlaid',
+    '[data-plyr="play"]',
+    'button[aria-label*="play" i]',
+    '[title*="play" i]',
+    '[class*="play-button" i]',
+    '[id*="play" i]',
+    'button:has-text("Play")',
+  ];
+  for (const page of pages) {
+    let frames = [];
+    try { frames = page.frames(); } catch (_) { continue; }
+    for (const frame of frames) {
+      if (/(?:captcha|challenge|recaptcha|hcaptcha|challenge-platform)/i.test(frame.url() || '')) continue;
+      try {
+        await frame.evaluate(() => {
+          const videos = Array.from(document.querySelectorAll('video'));
+          for (const video of videos) video.muted = true;
+        });
+      } catch (_) {}
+
+      let clicked = false;
+      for (const selector of selectors) {
+        try {
+          const target = frame.locator(selector).first();
+          if (await target.count() && await target.isVisible()) {
+            await target.click({ force: true, timeout: 1200 });
+            clicked = true;
+            break;
+          }
+        } catch (_) {}
+      }
+      if (!clicked) {
+        try {
+          const target = frame.locator('video').first();
+          if (await target.count() && await target.isVisible()) {
+            await target.click({ force: true, timeout: 1200 });
+          }
+        } catch (_) {}
+      }
+
+      try {
+        await frame.evaluate(() => {
+          const videos = Array.from(document.querySelectorAll('video'));
+          for (const video of videos) {
+            video.muted = true;
+            const playing = video.play();
+            if (playing && playing.catch) playing.catch(() => {});
+          }
+        });
+      } catch (_) {}
+    }
   }
 }
 
