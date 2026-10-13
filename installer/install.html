@@ -62,7 +62,7 @@
     if (cls) line.className = cls;
     line.textContent = '> ' + msg;
     var out = document.getElementById('out');
-    out.insertBefore(line, out.firstChild);
+    out.appendChild(line);  // newest at the bottom, like a log
     report(msg);
   }
   function isVidaa() { return typeof window.Hisense_installApp === 'function'; }
