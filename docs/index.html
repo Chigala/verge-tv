@@ -1312,6 +1312,7 @@
   var webOvT, webWaitT, webStatusT, webPollT = 0, webBaseUrl = '', webOrigin = '', webProgress = 0,
       webDuration = 0, webPaused = true, webApiReady = false, webProgressKey = '',
       webLastSavedAt = 0, webSeekStep = 10, webLastSeek = 0, webSrc = '',
+      webCmdShape = '', webEverPlayed = false, webGateT = 0,
       webPid = '', webD = null, webSe = null, webEp = null, webLabel = '',
       nextUp = null, nextUpT = 0, nextUpN = 0;
   function webUrlAt(url, seconds) {
@@ -1340,26 +1341,29 @@
     try { $('web-frame').blur(); window.focus(); } catch (e) {}
   }
   function postWebCommand(action, fields) {
-    // The primary player speaks {action: ...}; the backup (VidFast) speaks
-    // {command: ...}. Translate only while the backup is on screen.
-    var message, name;
-    if (webSrc === 'alt') {
-      if (action === 'togglePlay') message = { command: webPaused ? 'play' : 'pause' };
-      else if (action === 'play' || action === 'pause') message = { command: action };
-      else if (action === 'seek' && fields) message = { command: 'seek', time: Math.floor(fields.time) };
-      else if (action === 'getStatus') message = { command: 'getStatus' };
-      else return false;   // enterFullscreen: VidFast has no such command
-    } else {
-      message = { action: action };
-      if (fields) for (name in fields) if (fields.hasOwnProperty(name)) message[name] = fields[name];
+    // Speak the dialect of whoever is actually in the frame, detected from its
+    // events: the primary speaks {action: ...}, VidFast speaks {command: ...}.
+    // Until the first event arrives, send both shapes — each player silently
+    // ignores the other's, so a mismatched template can never deaden the keys.
+    var name, sent = false;
+    function sendObject(message) {
+      try { $('web-frame').contentWindow.postMessage(message, '*'); sent = true; } catch (e) {}
     }
-    try {
-      // The documented API uses "*" because an embed may finish on a player
-      // origin different from the public page URL. Commands contain no secrets.
-      $('web-frame').contentWindow.postMessage(message, '*');
-      keepWebControls();
-      return true;
-    } catch (e) { return false; }
+    if (webCmdShape !== 'command') {
+      var message = { action: action };
+      if (fields) for (name in fields) if (fields.hasOwnProperty(name)) message[name] = fields[name];
+      sendObject(message);
+    }
+    if (webCmdShape !== 'action') {
+      var cmd = null;
+      if (action === 'togglePlay') cmd = { command: webPaused ? 'play' : 'pause' };
+      else if (action === 'play' || action === 'pause') cmd = { command: action };
+      else if (action === 'seek' && fields) cmd = { command: 'seek', time: Math.floor(fields.time) };
+      else if (action === 'getStatus') cmd = { command: 'getStatus' };
+      if (cmd) sendObject(cmd);   // enterFullscreen has no VidFast command
+    }
+    if (sent) { keepWebControls(); return true; }
+    return false;
   }
   function pokeWebOverlay() {
     $('web-ov').className = 'ov';
@@ -1384,6 +1388,8 @@
     webDuration = 0;
     webPaused = true;
     webApiReady = false;
+    webCmdShape = '';
+    webEverPlayed = false;
     webLastSavedAt = 0;
     webSeekStep = 10;
     webLastSeek = 0;
@@ -1398,6 +1404,7 @@
     clearTimeout(webOvT);
     clearTimeout(webWaitT);
     clearTimeout(webStatusT);
+    clearTimeout(webGateT);
     clearInterval(webPollT);
     webOvT = setTimeout(function () { $('web-ov').className = 'ov off'; }, 4500);
     // The embed only volunteers status when it feels like it; keep asking so
@@ -1413,11 +1420,19 @@
         : '<span class="key">▼</span>open full-page player<span class="key">BACK</span>cancel';
       $('web-ov').className = 'ov';
     }, 8000);
+    // A VidFast-style player can answer getStatus yet sit on a click gate and
+    // never start. Give it longer than a slow load, then offer the way out.
+    webGateT = setTimeout(function () {
+      if (screen !== 'webs' || webEverPlayed || webSrc !== 'alt') return;
+      $('web-help').innerHTML = '<span class="key">▼</span>open full-page player<span class="key">BACK</span>cancel';
+      $('web-ov').className = 'ov';
+    }, 15000);
   }
   function closeWebPage() {
     clearTimeout(webOvT);
     clearTimeout(webWaitT);
     clearTimeout(webStatusT);
+    clearTimeout(webGateT);
     clearInterval(webPollT);
     hideNextUp();
     saveWebProgress();
@@ -1523,9 +1538,10 @@
     else if (k === K.PLAY) postWebCommand('play');
     else if (k === K.PAUSE) postWebCommand('pause');
     else if (k === K.DOWN) {
-      if (webApiReady) postWebCommand('enterFullscreen');
+      var gated = webSrc === 'alt' && !webEverPlayed;   // answers but never starts: needs a click
+      if (webApiReady && !gated) postWebCommand('enterFullscreen');
       else if (webSrc !== 'alt') playMedia(webD, webSe, webEp, webLabel, 'alt');   // embed dead: try the backup
-      else fullPageWebPlayer('', webD);   // backup also dead: take over the page
+      else fullPageWebPlayer('', webD);   // gated or dead backup: take over the page
     }
     else if (k === K.LEFT || k === K.RIGHT || k === K.REW || k === K.FF) {
       var now = Date.now();
@@ -1561,9 +1577,11 @@
     // still proves that the message came from this exact iframe window.
     if (message.source === 'moviesapi-player' && message.event) {
       webApiReady = true;
+      webCmdShape = 'action';
       clearTimeout(webWaitT);
       if (typeof message.currentTime === 'number') webProgress = message.currentTime;
       if (typeof message.duration === 'number') webDuration = message.duration;
+      if (message.event === 'play' || message.event === 'timeupdate' || webProgress > 0) webEverPlayed = true;
       paintWebProgress();
       if (message.event === 'play') {
         webPaused = false;
@@ -1590,6 +1608,7 @@
     if (webOrigin && event.origin && event.origin !== webOrigin) return;
     if (message.type !== 'PLAYER_EVENT' || !message.data) return;
     webApiReady = true;
+    webCmdShape = 'command';
     clearTimeout(webWaitT);
     var data = message.data, status = data.player_status;
     if (typeof data.player_progress === 'number') { webProgress = data.player_progress; paintWebProgress(); }
@@ -1599,6 +1618,7 @@
     if (typeof data.event === 'string') {
       if (typeof data.currentTime === 'number') webProgress = data.currentTime;
       if (typeof data.duration === 'number') webDuration = data.duration;
+      if (data.event === 'play' || data.event === 'timeupdate' || data.playing === true || webProgress > 0) webEverPlayed = true;
       paintWebProgress();
       if (data.event === 'playerstatus') {
         webPaused = !data.playing;
@@ -1619,6 +1639,7 @@
       else if (data.event === 'seeked') status = 'seeked';
       else if (data.event === 'ended') status = 'completed';
     }
+    if (status === 'playing' || status === 'seeked' || webProgress > 0) webEverPlayed = true;
     if (status === 'playing' || status === 'paused' || status === 'seeked') saveWebProgress();
     if (status === 'playing') {
       webPaused = false;
