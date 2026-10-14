@@ -51,12 +51,12 @@
                 linear-gradient(0deg, var(--bg) 0%, rgba(10,10,14,0) 45%); }
   #hero .txt { position: absolute; left: 4vw; bottom: 2.2vw; width: 44%; }
   .kind { font-size: .78vw; font-weight: 800; letter-spacing: .14em; color: var(--accent); margin-bottom: .55vw; text-transform: uppercase; }
-  #h-title { font-size: 3vw; line-height: 1.06; margin: 0 0 .7vw; letter-spacing: -.02em; font-weight: 800; }
-  .meta { color: var(--muted); font-size: 1.05vw; }
+  #h-title { font-size: 2.65vw; line-height: 1.06; margin: 0 0 .7vw; letter-spacing: -.02em; font-weight: 800; }
+  .meta { color: var(--muted); font-size: .98vw; }
   .meta b { color: var(--accent); font-weight: 700; }
   .meta .dot { margin: 0 .55vw; color: #5e5e68; }
-  .cert { display: inline-block; border: .1vw solid #77778a; color: var(--soft); border-radius: .25vw; padding: 0 .4vw; font-size: .85vw; font-weight: 700; }
-  #h-over { font-size: 1.1vw; line-height: 1.45; color: var(--soft); margin: .8vw 0 0; }
+  .cert { display: inline-block; border: .1vw solid #77778a; color: var(--soft); border-radius: .25vw; padding: 0 .4vw; font-size: .8vw; font-weight: 700; }
+  #h-over { font-size: 1vw; line-height: 1.45; color: var(--soft); margin: .8vw 0 0; }
 
   #rows-vp { position: absolute; top: 57vh; left: 0; right: 0; bottom: 0; overflow: hidden; }
   #rows { transition: transform .22s ease-out; }
@@ -89,10 +89,10 @@
   #d-dim.on { opacity: .82; }
   #d-scroll { position: absolute; top: 0; left: 0; right: 0; transition: transform .25s ease-out; }
   #d-main { height: 84vh; padding: 5.2vw 4vw 0; width: 60%; position: relative; }
-  #d-title { font-size: 3.3vw; line-height: 1.05; margin: 0 0 .9vw; letter-spacing: -.02em; font-weight: 800; }
-  #d-tag { color: var(--accent); font-style: italic; margin: .8vw 0 0; font-size: 1.1vw; }
-  #d-over { font-size: 1.2vw; line-height: 1.5; color: var(--soft); margin: .9vw 0; }
-  .credits { font-size: 1vw; color: var(--muted); line-height: 1.65; }
+  #d-title { font-size: 2.9vw; line-height: 1.05; margin: 0 0 .9vw; letter-spacing: -.02em; font-weight: 800; }
+  #d-tag { color: var(--accent); font-style: italic; margin: .8vw 0 0; font-size: 1vw; }
+  #d-over { font-size: 1.1vw; line-height: 1.5; color: var(--soft); margin: .9vw 0; }
+  .credits { font-size: .92vw; color: var(--muted); line-height: 1.65; }
   .credits span { color: var(--soft); }
   .btns { margin: 1.5vw 0 1.3vw; white-space: nowrap; }
   .btn { display: inline-block; padding: .85vw 1.7vw; margin-right: .8vw; border-radius: 99vw; background: rgba(255,255,255,.12);
@@ -139,9 +139,9 @@
   #epi .shade { position: absolute; top: 0; bottom: 0; right: 0; width: 68%;
     background: linear-gradient(90deg, var(--bg) 0%, rgba(10,10,14,.85) 30%, rgba(10,10,14,.1) 100%); }
   #epi .body { position: absolute; left: 4vw; top: 6vw; width: 48%; }
-  #e-show { color: var(--accent); font-weight: 800; font-size: .9vw; letter-spacing: .1em; text-transform: uppercase; margin-bottom: .6vw; }
-  #e-title { font-size: 3vw; line-height: 1.08; margin: 0 0 .8vw; font-weight: 800; letter-spacing: -.02em; }
-  #e-over { font-size: 1.2vw; line-height: 1.55; color: var(--soft); margin-top: 1.2vw; }
+  #e-show { color: var(--accent); font-weight: 800; font-size: .82vw; letter-spacing: .1em; text-transform: uppercase; margin-bottom: .6vw; }
+  #e-title { font-size: 2.6vw; line-height: 1.08; margin: 0 0 .8vw; font-weight: 800; letter-spacing: -.02em; }
+  #e-over { font-size: 1.1vw; line-height: 1.55; color: var(--soft); margin-top: 1.2vw; }
   #epi .keys { position: absolute; left: 4vw; bottom: 3vw; }
 
   /* ---------- search ---------- */
@@ -180,6 +180,19 @@
   .center-msg { position: absolute; top: 45%; left: 10%; right: 10%; text-align: center; font-size: 1.5vw; color: #ddd; }
   .keys { color: #bbb; font-size: .95vw; }
   .key { display: inline-block; padding: .05vw .45vw; border: .1vw solid #555; border-radius: .3vw; color: #fff; margin: 0 .3vw 0 .9vw; }
+
+  /* ---------- watch history ---------- */
+  .card .cprog { position: absolute; left: 0; right: 0; bottom: 0; height: .3vw; background: rgba(0,0,0,.6); }
+  .card .cprog div { height: 100%; background: var(--accent); }
+  .ecard .watched { position: absolute; top: .45vw; right: .45vw; width: 1.3vw; height: 1.3vw; line-height: 1.3vw; text-align: center;
+    border-radius: 50%; background: var(--accent); color: #000; font-size: .85vw; font-weight: 800; }
+
+  /* ---------- up next ---------- */
+  #web-next { position: absolute; right: 4vw; bottom: 11vw; width: 30vw; padding: 1.4vw 1.7vw; border-radius: 1vw;
+    background: rgba(14,14,20,.96); border: .14vw solid rgba(255,255,255,.16); }
+  #web-next .nx-up { color: var(--muted); font-size: .85vw; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; margin-bottom: .45vw; }
+  #web-next .nx-t { font-size: 1.25vw; font-weight: 700; line-height: 1.3; margin-bottom: .5vw; }
+  #web-next .nx-c { color: #ddd; font-size: 1vw; margin-bottom: .8vw; }
 
   /* ---------- QR ---------- */
   #qrs { background: rgba(5,5,8,.97); text-align: center; }
@@ -287,9 +300,17 @@
 
 <div id="webs" class="screen">
   <iframe id="web-frame" title="Video player" tabindex="-1" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen></iframe>
+  <div id="web-next" class="hide">
+    <div class="nx-up">Up next</div>
+    <div class="nx-t" id="nx-title"></div>
+    <div class="nx-c" id="nx-count"></div>
+    <div class="keys"><span class="key">OK</span>play now<span class="key">BACK</span>close</div>
+  </div>
   <div class="ov" id="web-ov">
     <div class="ttl" id="web-title"></div>
-    <div class="keys" id="web-help"><span class="key">OK</span>play/pause<span class="key">◀ ▶</span>seek<span class="key">▼</span>fullscreen<span class="key">BACK</span>close</div>
+    <div class="bar"><div id="web-bar"></div></div>
+    <div class="row2"><span id="web-time">0:00</span>
+      <span class="keys" id="web-help"><span class="key">OK</span>play/pause<span class="key">◀ ▶</span>seek<span class="key">▼</span>fullscreen<span class="key">BACK</span>close</span></div>
   </div>
 </div>
 
@@ -512,6 +533,92 @@
     getJSON('data/e/s' + key + '.json', function (s) { seasonCache[key] = s; cb(s); }, live);
   }
 
+  /* ================= watch log =================
+     localStorage survives in the TV's WebView, so progress per title (the
+     verge-progress-* keys the web player already writes) plus this index of
+     what was played gives Continue watching / Watched rows. */
+  var WATCH_KEY = 'verge-watch-v1', watchLog = [], watchMap = {}, historyDirty = false;
+  function loadWatchLog() {
+    try {
+      var arr = JSON.parse(localStorage.getItem(WATCH_KEY) || '[]');
+      if (arr && arr.length) watchLog = arr.slice(0, 60);
+    } catch (e) { watchLog = []; }
+    for (var i = 0; i < watchLog.length; i++) if (watchLog[i] && watchLog[i].pid) watchMap[watchLog[i].pid] = watchLog[i];
+  }
+  function saveWatchLog() {
+    historyDirty = true;
+    try { localStorage.setItem(WATCH_KEY, JSON.stringify(watchLog.slice(0, 60))); } catch (e) {}
+  }
+  function progressIdFor(d, season, episode) {
+    return (d.imdb || d.tm || d.t) + (season != null ? '-s' + season + '-e' + episode : '');
+  }
+  function readProgress(pid) {
+    try { return parseFloat(localStorage.getItem('verge-progress-' + pid)) || 0; } catch (e) { return 0; }
+  }
+  function upsertWatch(pid, d, se, ep, label, pos, dur) {
+    if (!pid || !d || !d.tm || pos < 30) return;
+    var e = watchMap[pid];
+    if (e && e.done) return;   // already finished: a partial rewatch stays in Watched
+    if (!e) {
+      e = { pid: pid, id: (d.k === 's' ? 's' : 'm') + d.tm, k: d.k === 's' ? 's' : 'm', t: d.t, y: d.y || '',
+            p: d.p || '', b: (d.b || '').replace('/w1280/', '/w780/') };
+      watchLog.unshift(e);
+      watchMap[pid] = e;
+    }
+    e.se = se != null ? se : null; e.ep = ep != null ? ep : null; e.label = label || '';
+    e.pos = Math.floor(pos); e.dur = Math.floor(dur || 0); e.at = Date.now();
+    var i = watchLog.indexOf(e);
+    if (i > 0) { watchLog.splice(i, 1); watchLog.unshift(e); }
+    saveWatchLog();
+  }
+  function markWatchedWatch(pid) {
+    var e = watchMap[pid];
+    if (!e) return;
+    e.done = 1; e.at = Date.now();
+    var i = watchLog.indexOf(e);
+    if (i > 0) { watchLog.splice(i, 1); watchLog.unshift(e); }
+    saveWatchLog();
+  }
+  function isWatched(pid) { var e = watchMap[pid]; return !!(e && e.done); }
+  // Titles watched from search may not be in today's catalog; a minimal live
+  // card makes their details load from TMDB on demand.
+  function entryItem(e) {
+    if (!items[e.id]) remember({ id: e.id, k: e.k, t: e.t, y: e.y, p: e.p, b: e.b, r: 0, o: '', g: [], live: 1 });
+    return e.id;
+  }
+  function homeDynamicRows() {
+    var rows = [], cw = [], wt = [], i, e;
+    for (i = 0; i < watchLog.length; i++) {
+      e = watchLog[i];
+      if (!e.id || !e.t) continue;
+      if (e.done) wt.push(e);
+      else if (e.pos >= 30) cw.push(e);
+    }
+    if (cw.length) {
+      var map = {}, row = { title: 'Continue watching', wide: true, items: [], _cw: map };
+      for (i = 0; i < Math.min(12, cw.length); i++) { map[cw[i].id] = cw[i]; row.items.push(entryItem(cw[i])); }
+      rows.push(row);
+    }
+    if (wt.length) {
+      var row2 = { title: 'Watched', items: [] };
+      for (i = 0; i < Math.min(12, wt.length); i++) row2.items.push(entryItem(wt[i]));
+      rows.push(row2);
+    }
+    return rows;
+  }
+  // Playback updates the log while the user sits on details/episode screens;
+  // rebuild the home rows the next time BACK lands on the home screen.
+  function refreshHomeRows() {
+    if (!historyDirty || screen !== 'home' || tabIdx !== 0) return;
+    historyDirty = false;
+    var st = tabState[0], keepRow = st.row, keepCol = st.cols[st.row] || 0;
+    buildTab(0);
+    st = tabState[0];
+    st.row = Math.min(keepRow, rowEls.length - 1);
+    st.cols[st.row] = Math.max(0, Math.min(keepCol, (cardEls[st.row] || []).length - 1));
+    updateHomeFocus();
+  }
+
   /* ================= cards ================= */
   function makeCard(it, wide, showKind) {
     var c = el('div', 'card' + (wide ? ' wide' : ''));
@@ -574,8 +681,9 @@
     box.innerHTML = '';
     box.style.transform = '';
     rowEls = []; cardEls = []; prevCard = null;
-    for (var r = 0; r < t.rows.length; r++) {
-      var row = t.rows[r];
+    var rowDefs = t.id === 'home' ? homeDynamicRows().concat(t.rows) : t.rows;
+    for (var r = 0; r < rowDefs.length; r++) {
+      var row = rowDefs[r];
       var rowEl = el('div', 'row');
       rowEl.appendChild(el('h3', null, row.title));
       var track = el('div', 'track'), cards = [];
@@ -583,6 +691,12 @@
         var it = items[row.items[c]];
         if (!it) continue;
         var card = makeCard(it, row.wide, t.id === 'home');
+        if (row._cw && row._cw[it.id]) {
+          var en = row._cw[it.id], cp = el('div', 'cprog'), fill = el('div');
+          fill.style.width = (en.dur ? Math.min(100, Math.round(100 * en.pos / en.dur)) : 0) + '%';
+          cp.appendChild(fill);
+          card.appendChild(cp);
+        }
         track.appendChild(card);
         cards.push(card);
       }
@@ -702,7 +816,7 @@
     var prev = stack.pop() || { s: 'home' };
     if (prev.s === 'details') { renderDetails(prev.it, prev.d, prev); return; }
     show(prev.s);
-    if (prev.s === 'home') updateHomeFocus();
+    if (prev.s === 'home') { refreshHomeRows(); updateHomeFocus(); }
   }
 
   function renderDetails(it, d, restore) {
@@ -740,9 +854,11 @@
     var isSeries = (d.k || it.k) === 's';
     var hasPlayer = !!trailerApi && !!d.tm;
     var seasons = d.ss || [];
-    if (hasPlayer && !isSeries) addBtn('▶  Watch', true, function () { playMedia(d); });
+    if (hasPlayer && !isSeries) {
+      var pos = readProgress(progressIdFor(d));
+      addBtn(pos >= 30 ? '▶ Resume · ' + fmtTime(pos) : '▶  Watch', true, function () { playMedia(d); });
+    }
     if (seasons.length) addBtn('Episodes', true, function () { det.z = det.zones[seasonZone + 1].els.length ? seasonZone + 1 : seasonZone; paintDetails(); });
-    if (d.v && d.v.length) addBtn('Trailer on phone', false, function () { showQR(ytUrl(d.v[0].k), 'Scan to watch the trailer', d.t); });
     if (d.info) addBtn('More info', !hasPlayer && !seasons.length, function () { showQR(d.info, 'Scan for more info', d.t); });
     $('d-note').textContent = !hasPlayer ? 'Playback is unavailable for this title.' : (isSeries ? 'Choose a season and episode to watch.' : '');
     if (btns.length) det.zones.push({ els: btns });
@@ -853,7 +969,8 @@
       for (var i = 0; i < (season.v || []).length && i < 1; i++) list.push({ trailer: season.v[i], season: season });
       for (i = 0; i < season.eps.length; i++) list.push({ ep: season.eps[i], season: season });
       for (i = 0; i < list.length; i++) {
-        var c = list[i].trailer ? videoCard({ k: list[i].trailer.k, n: season.nm + ' trailer' }) : episodeCard(list[i].ep);
+        var c = list[i].trailer ? videoCard({ k: list[i].trailer.k, n: season.nm + ' trailer' })
+                                : episodeCard(list[i].ep, isWatched(progressIdFor(d, season.n, list[i].ep.n)));
         c._v = list[i];
         zn.track.appendChild(c);
         zn.els.push(c);
@@ -867,10 +984,11 @@
     });
   }
 
-  function episodeCard(ep) {
+  function episodeCard(ep, watched) {
     var c = el('div', 'ecard'), th = el('div', 'th');
     if (ep.s) th.style.backgroundImage = 'url(' + ep.s + ')';
     th.appendChild(el('div', 'num', 'E' + ep.n));
+    if (watched) th.appendChild(el('div', 'watched', '✓'));
     c.appendChild(th);
     c.appendChild(el('div', 'nm clamp2', ep.n + '. ' + (ep.t || 'Episode ' + ep.n)));
     c.appendChild(el('div', 'em', episodeMeta(ep)));
@@ -941,6 +1059,8 @@
     $('e-title').textContent = ep.t || 'Episode ' + ep.n;
     $('e-meta').textContent = episodeMeta(ep);
     $('e-over').textContent = ep.o || 'No description yet.';
+    var pos = readProgress(progressIdFor(epi.d, epi.season.n, ep.n));
+    $('e-play').textContent = pos >= 30 ? '▶ Resume · ' + fmtTime(pos) : '▶ Watch episode';
     still.className = 'still';
     still.removeAttribute('src');
     var src = ep.s ? ep.s.replace('/w300/', '/w1280/') : epi.d.b;
@@ -1169,8 +1289,8 @@
         return;
       }
       var title = d.t + (episodeLabel ? ' · ' + episodeLabel : '');
-      var progressId = (d.imdb || d.tm || d.t) + (season != null ? '-s' + season + '-e' + episode : '');
-      playWebPage(data.url, title, d, progressId);
+      var progressId = progressIdFor(d, season, episode);
+      playWebPage(data.url, title, d, progressId, season != null ? { se: season, ep: episode, label: episodeLabel || '' } : null);
     };
     req.onerror = req.ontimeout = function () {
       if (trailerRequest === req) trailerRequest = null;
@@ -1187,9 +1307,11 @@
   }
 
   /* ================= trailer web page ================= */
-  var webOvT, webWaitT, webStatusT, webBaseUrl = '', webOrigin = '', webProgress = 0,
+  var webOvT, webWaitT, webStatusT, webPollT = 0, webBaseUrl = '', webOrigin = '', webProgress = 0,
       webDuration = 0, webPaused = true, webApiReady = false, webProgressKey = '',
-      webLastSavedAt = 0, webSeekStep = 10, webLastSeek = 0;
+      webLastSavedAt = 0, webSeekStep = 10, webLastSeek = 0,
+      webPid = '', webD = null, webSe = null, webEp = null, webLabel = '',
+      nextUp = null, nextUpT = 0, nextUpN = 0;
   function webUrlAt(url, seconds) {
     if (!seconds || seconds < 5) return url;
     var hash = '', at = url.indexOf('#');
@@ -1208,6 +1330,7 @@
   function saveWebProgress() {
     if (!webProgressKey || !webProgress) return;
     try { localStorage.setItem(webProgressKey, String(webProgress)); } catch (e) {}
+    upsertWatch(webPid, webD, webSe, webEp, webLabel, webProgress, webDuration);
   }
   function keepWebControls() {
     // The parent must retain focus so every remote key can be translated into
@@ -1229,12 +1352,20 @@
     $('web-ov').className = 'ov';
     clearTimeout(webOvT);
     webOvT = setTimeout(function () { if (!webPaused) $('web-ov').className = 'ov off'; }, 3500);
+    paintWebProgress();
   }
-  function playWebPage(url, title, d, progressId) {
-    overlayFrom = screen;
+  function playWebPage(url, title, d, progressId, epCtx) {
+    // Chained "up next" playback starts while this screen is already showing;
+    // keep the page that was under the player so BACK still lands there.
+    if (screen !== 'webs') overlayFrom = screen;
     webBaseUrl = url;
     webOrigin = webOriginOf(url);
     webProgressKey = 'verge-progress-' + (progressId || d.imdb || d.tm || d.t);
+    webPid = progressId || '';
+    webD = d;
+    webSe = epCtx ? epCtx.se : null;
+    webEp = epCtx ? epCtx.ep : null;
+    webLabel = epCtx ? epCtx.label : '';
     webProgress = readWebProgress();
     webDuration = 0;
     webPaused = true;
@@ -1242,8 +1373,10 @@
     webLastSavedAt = 0;
     webSeekStep = 10;
     webLastSeek = 0;
+    hideNextUp();
     $('web-title').textContent = title;
     $('web-help').innerHTML = '<span class="key">OK</span>play/pause<span class="key">◀ ▶</span>seek<span class="key">▼</span>fullscreen<span class="key">BACK</span>close';
+    paintWebProgress();
     $('web-ov').className = 'ov';
     $('web-frame').src = webUrlAt(url, webProgress);
     show('webs');
@@ -1251,20 +1384,93 @@
     clearTimeout(webOvT);
     clearTimeout(webWaitT);
     clearTimeout(webStatusT);
+    clearInterval(webPollT);
     webOvT = setTimeout(function () { $('web-ov').className = 'ov off'; }, 4500);
+    // The embed only volunteers status when it feels like it; keep asking so
+    // duration and the progress bar stay honest.
+    webPollT = setInterval(function () {
+      if (screen === 'webs' && !nextUp) postWebCommand('getStatus');
+    }, 3000);
     webWaitT = setTimeout(function () {
-      if (screen !== 'webs') return;
-      if (!webApiReady) $('web-help').innerHTML = '<span class="key">OK</span>play/pause<span class="key">◀ ▶</span>seek<span class="key">▼</span>fullscreen<span class="key">BACK</span>close';
+      if (screen !== 'webs' || webApiReady) return;
+      // The player never answered: offer the way out instead of a black screen.
+      $('web-help').innerHTML = '<span class="key">▼</span>open full-page player<span class="key">BACK</span>cancel';
       $('web-ov').className = 'ov';
-    }, 7000);
+    }, 8000);
   }
   function closeWebPage() {
     clearTimeout(webOvT);
     clearTimeout(webWaitT);
     clearTimeout(webStatusT);
+    clearInterval(webPollT);
+    hideNextUp();
     saveWebProgress();
     $('web-frame').src = 'about:blank';
     if (screen === 'webs') show(overlayFrom);
+  }
+  function paintWebProgress() {
+    var dur = webDuration || 0, t = webProgress || 0;
+    $('web-bar').style.width = dur ? Math.min(100, 100 * t / dur) + '%' : '0';
+    $('web-time').textContent = fmtTime(t) + (dur ? ' / ' + fmtTime(dur) : '');
+  }
+  /* ---------- up next ---------- */
+  function nextEpisodeInfo() {
+    if (!epi || !webD || epi.d !== webD || !epi.season) return null;
+    if (epi.i + 1 < epi.season.eps.length) return { season: epi.season, ep: epi.season.eps[epi.i + 1] };
+    var ss = webD.ss || [], idx = -1;
+    for (var i = 0; i < ss.length; i++) if (ss[i].n === epi.season.n) { idx = i; break; }
+    if (idx >= 0 && idx + 1 < ss.length) return { seasonRow: ss[idx + 1] };
+    return null;
+  }
+  function episodeLabelFor(season, ep) {
+    return season.nm + ' · Episode ' + ep.n + (ep.t ? ' · ' + ep.t : '');
+  }
+  // Playback reached the end. Only show "up next" when a real next episode
+  // exists; on the last episode of the show (or an empty next season) close.
+  function endedPlayback() {
+    try { localStorage.removeItem(webProgressKey); } catch (e2) {}
+    markWatchedWatch(webPid);
+    webProgress = 0;
+    var next = nextEpisodeInfo();
+    if (!next) { closeWebPage(); return; }
+    if (next.ep) { showNextUp(next); return; }
+    // Last episode of the season: confirm the next season has episodes before
+    // promising anything on screen.
+    var d = webD;
+    getSeason(d, next.seasonRow.n, function (season) {
+      if (screen !== 'webs' || webD !== d) return;
+      if (season && season.eps.length) showNextUp({ season: season, ep: season.eps[0] });
+      else closeWebPage();
+    });
+  }
+  function showNextUp(next) {
+    hideNextUp();
+    nextUp = next;
+    nextUpN = 8;
+    $('nx-title').textContent = episodeLabelFor(next.season, next.ep);
+    $('nx-count').textContent = 'Playing in ' + nextUpN + 's…';
+    $('web-next').className = '';
+    // Keep the controls on screen while the card is up.
+    clearTimeout(webOvT);
+    $('web-ov').className = 'ov';
+    nextUpT = setInterval(function () {
+      if (!nextUp) return;
+      if (--nextUpN <= 0) { startNextUp(); return; }
+      $('nx-count').textContent = 'Playing in ' + nextUpN + 's…';
+    }, 1000);
+  }
+  function hideNextUp() {
+    nextUp = null;
+    clearInterval(nextUpT);
+    var box = $('web-next');
+    if (box) box.className = 'hide';
+  }
+  function startNextUp() {
+    var next = nextUp;
+    hideNextUp();
+    if (!next || screen !== 'webs' || !webD) return;
+    epi = { d: webD, season: next.season, i: next.season.eps.indexOf(next.ep) };
+    playMedia(webD, next.season.n, next.ep.n, episodeLabelFor(next.season, next.ep));
   }
   function fullPageWebPlayer(url, d) {
     if (url) {
@@ -1291,10 +1497,17 @@
   }
   function webKey(k) {
     if (k === K.STOP) { closeWebPage(); return true; }
+    if (nextUp) {
+      if (k === K.OK) { startNextUp(); return true; }
+      hideNextUp();   // any other key cancels the countdown, then works normally
+    }
     if (k === K.OK || k === K.SPACE || k === K.PLAYPAUSE) postWebCommand('togglePlay');
     else if (k === K.PLAY) postWebCommand('play');
     else if (k === K.PAUSE) postWebCommand('pause');
-    else if (k === K.DOWN) postWebCommand('enterFullscreen');
+    else if (k === K.DOWN) {
+      if (webApiReady) postWebCommand('enterFullscreen');
+      else fullPageWebPlayer('', webD);   // embed never answered: take over the page
+    }
     else if (k === K.LEFT || k === K.RIGHT || k === K.REW || k === K.FF) {
       var now = Date.now();
       webSeekStep = now - webLastSeek < 400 ? Math.min(60, webSeekStep < 30 ? 30 : 60) : 10;
@@ -1332,6 +1545,7 @@
       clearTimeout(webWaitT);
       if (typeof message.currentTime === 'number') webProgress = message.currentTime;
       if (typeof message.duration === 'number') webDuration = message.duration;
+      paintWebProgress();
       if (message.event === 'play') {
         webPaused = false;
         $('web-ov').className = 'ov off';
@@ -1349,17 +1563,17 @@
       } else if (message.event === 'playerstatus') {
         webPaused = !!message.paused;
       } else if (message.event === 'ended') {
-        try { localStorage.removeItem(webProgressKey); } catch (e2) {}
-        webProgress = 0;
-        closeWebPage();
+        endedPlayback();
       }
       keepWebControls();
       return;
     }
     if (webOrigin && event.origin && event.origin !== webOrigin) return;
     if (message.type !== 'PLAYER_EVENT' || !message.data) return;
+    webApiReady = true;
+    clearTimeout(webWaitT);
     var data = message.data, status = data.player_status;
-    if (typeof data.player_progress === 'number') webProgress = data.player_progress;
+    if (typeof data.player_progress === 'number') { webProgress = data.player_progress; paintWebProgress(); }
     if (status === 'playing' || status === 'paused' || status === 'seeked') saveWebProgress();
     if (status === 'playing') {
       webPaused = false;
@@ -1369,9 +1583,7 @@
       webPaused = true;
       pokeWebOverlay();
     } else if (status === 'completed') {
-      try { localStorage.removeItem(webProgressKey); } catch (e2) {}
-      webProgress = 0;
-      closeWebPage();
+      endedPlayback();
     }
   }, false);
   window.addEventListener('pageshow', function (event) {
@@ -1566,7 +1778,11 @@
       if (screen === 'player') closeVideo();
       else if (screen === 'yts') closeTrailer();
       else if (screen === 'webs') closeWebPage();
-      else if (screen === 'qrs' || screen === 'epi') show(overlayFrom);
+      else if (screen === 'qrs') show(overlayFrom);
+      // The episode screen always sits on top of the series details page.
+      // (overlayFrom can't be trusted here: playWebPage points it at 'epi'
+      // while an episode is playing, which used to make BACK a no-op.)
+      else if (screen === 'epi') { show('details'); paintDetails(); }
       else if (screen === 'details' || screen === 'search') detailsBack();
       else homeBack();
       return;
@@ -1604,6 +1820,7 @@
     if (!tabs.length) { $('status').textContent = 'The catalog is empty right now. Check back later.'; return; }
     $('status').className = 'hide';
     indexItems();
+    loadWatchLog();
     buildKeyboard();
     buildNav();
     buildTab(0);
