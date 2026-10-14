@@ -66,6 +66,7 @@ function configuredPlayerUrl(request, env) {
   const season = url.searchParams.get('season') || '';
   const episode = url.searchParams.get('episode') || '';
   const startAt = url.searchParams.get('startAt') || url.searchParams.get('t') || '';
+  const src = url.searchParams.get('src') || '';
 
   if (type !== 'movie' && type !== 'tv') throw codedError('INVALID_MEDIA_TYPE', 400);
   if (!/^\d{1,12}$/.test(tmdb)) throw codedError('INVALID_TMDB_ID', 400);
@@ -74,8 +75,12 @@ function configuredPlayerUrl(request, env) {
   if (type === 'tv' && !/^\d{1,4}$/.test(season)) throw codedError('INVALID_SEASON', 400);
   if (type === 'tv' && !/^\d{1,5}$/.test(episode)) throw codedError('INVALID_EPISODE', 400);
   if (startAt && !/^\d{1,10}$/.test(startAt)) throw codedError('INVALID_START_TIME', 400);
+  if (src && src !== 'alt') throw codedError('INVALID_SOURCE', 400);
 
-  const template = String(env.TRAILER_URL_TEMPLATE || '').trim();
+  // src=alt selects the backup provider template. Keeping it a separate secret
+  // means the backup can rotate without touching the primary.
+  const template = String((src === 'alt' ? env.TRAILER_URL_TEMPLATE_ALT : env.TRAILER_URL_TEMPLATE) || '').trim();
+  if (src === 'alt' && !template) throw codedError('ALT_PLAYER_NOT_CONFIGURED', 503);
   const hasTemplateFields = /\{\w+\}/.test(template);
   const hasSeasonField = /\{season\}/.test(template);
   const hasEpisodeField = /\{episode\}/.test(template);

@@ -28,6 +28,7 @@ Live at https://chigala.github.io/verge-tv/
 | `TMDB_SEARCH_KEY` | GitHub variable and/or `.env` | Optional short v3 key the TV uses to search all of TMDB and load any title, season or episode. Public: it ends up in the catalog. Without it, search covers only the catalog and series show only their latest 3 seasons. |
 | `TRAILER_API_URL` | GitHub Actions secret | Public Cloudflare Worker URL including the private `ACCESS_PATH`. **Play** uses its fast `/player` lookup; there is no YouTube fallback. |
 | `TRAILER_URL_TEMPLATE` | Cloudflare Worker secret only | Private player base URL. The gateway adds `/movie/{tmdb}` or `/tv/{tmdb}/{season}/{episode}`. Existing templates remain supported with `{tmdb}` `{imdb}` `{type}` `{title}` `{year}` `{season}` `{episode}`. Never put the real value in Git, Pages data, command arguments, logs or support messages. |
+| `TRAILER_URL_TEMPLATE_ALT` | Cloudflare Worker secret only | Optional backup player used when the primary one fails to load. Same template rules as `TRAILER_URL_TEMPLATE`; the TV's **Backup player** button requests it with `src=alt`. For VidFast, use `https://vidfast.vc/{type}/{tmdb}?autoPlay=true` — its `postMessage` API (play/pause/seek/getStatus commands and `PLAYER_EVENT` events) is already understood by the app, so remote keys keep working. Without this secret the button just shows a toast. |
 
 ```bash
 gh secret set TMDB_TOKEN --repo Chigala/verge-tv
@@ -87,6 +88,7 @@ npx wrangler login
 npm test
 npm run deploy
 npx wrangler secret put TRAILER_URL_TEMPLATE
+npx wrangler secret put TRAILER_URL_TEMPLATE_ALT   # optional backup player
 npx wrangler secret put ACCESS_PATH
 npx wrangler secret put PLAYBACK_TOKEN_SECRET
 npm run deploy

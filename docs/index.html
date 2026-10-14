@@ -857,6 +857,7 @@
     if (hasPlayer && !isSeries) {
       var pos = readProgress(progressIdFor(d));
       addBtn(pos >= 30 ? '▶ Resume · ' + fmtTime(pos) : '▶  Watch', true, function () { playMedia(d); });
+      addBtn('Backup player', false, function () { playMedia(d, null, null, null, 'alt'); });
     }
     if (seasons.length) addBtn('Episodes', true, function () { det.z = det.zones[seasonZone + 1].els.length ? seasonZone + 1 : seasonZone; paintDetails(); });
     if (d.info) addBtn('More info', !hasPlayer && !seasons.length, function () { showQR(d.info, 'Scan for more info', d.t); });
@@ -1251,7 +1252,7 @@
   /* ================= trailers ================= */
   function ytUrl(key) { return 'https://www.youtube.com/watch?v=' + key; }
   var trailerResolveId = 0, trailerResolveTimer = 0, trailerRequest = null;
-  function playerLookupUrl(d, season, episode) {
+  function playerLookupUrl(d, season, episode, src) {
     if (!trailerApi || !d.tm) return '';
     var base = trailerApi.replace(/\/+$/, '');
     var isSeries = d.k === 's';
@@ -1261,12 +1262,13 @@
       '&title=' + encodeURIComponent(d.t || '') +
       '&year=' + encodeURIComponent(d.y || '');
     if (isSeries) url += '&season=' + encodeURIComponent(season) + '&episode=' + encodeURIComponent(episode);
+    if (src === 'alt') url += '&src=alt';
     return url;
   }
   // The Worker fills the private template, then this page performs the iframe
   // navigation so the player receives the normal GitHub Pages referrer.
-  function playMedia(d, season, episode, episodeLabel) {
-    var url = playerLookupUrl(d, season, episode);
+  function playMedia(d, season, episode, episodeLabel, src) {
+    var url = playerLookupUrl(d, season, episode, src);
     if (!url) return;
     var fromScreen = screen;
     var requestId = ++trailerResolveId;
@@ -1285,12 +1287,12 @@
       var data = null;
       try { data = JSON.parse(req.responseText || '{}'); } catch (e) {}
       if (req.status < 200 || req.status >= 300 || !data || !/^https:\/\//i.test(data.url || '')) {
-        toast('The player is unavailable right now.');
+        toast(src === 'alt' && req.status === 503 ? 'The backup player isn’t set up yet.' : 'The player is unavailable right now.');
         return;
       }
       var title = d.t + (episodeLabel ? ' · ' + episodeLabel : '');
       var progressId = progressIdFor(d, season, episode);
-      playWebPage(data.url, title, d, progressId, season != null ? { se: season, ep: episode, label: episodeLabel || '' } : null);
+      playWebPage(data.url, title, d, progressId, season != null ? { se: season, ep: episode, label: episodeLabel || '' } : null, src);
     };
     req.onerror = req.ontimeout = function () {
       if (trailerRequest === req) trailerRequest = null;
@@ -1309,7 +1311,7 @@
   /* ================= trailer web page ================= */
   var webOvT, webWaitT, webStatusT, webPollT = 0, webBaseUrl = '', webOrigin = '', webProgress = 0,
       webDuration = 0, webPaused = true, webApiReady = false, webProgressKey = '',
-      webLastSavedAt = 0, webSeekStep = 10, webLastSeek = 0,
+      webLastSavedAt = 0, webSeekStep = 10, webLastSeek = 0, webSrc = '',
       webPid = '', webD = null, webSe = null, webEp = null, webLabel = '',
       nextUp = null, nextUpT = 0, nextUpN = 0;
   function webUrlAt(url, seconds) {
@@ -1338,8 +1340,19 @@
     try { $('web-frame').blur(); window.focus(); } catch (e) {}
   }
   function postWebCommand(action, fields) {
-    var message = { action: action }, name;
-    if (fields) for (name in fields) if (fields.hasOwnProperty(name)) message[name] = fields[name];
+    // The primary player speaks {action: ...}; the backup (VidFast) speaks
+    // {command: ...}. Translate only while the backup is on screen.
+    var message, name;
+    if (webSrc === 'alt') {
+      if (action === 'togglePlay') message = { command: webPaused ? 'play' : 'pause' };
+      else if (action === 'play' || action === 'pause') message = { command: action };
+      else if (action === 'seek' && fields) message = { command: 'seek', time: Math.floor(fields.time) };
+      else if (action === 'getStatus') message = { command: 'getStatus' };
+      else return false;   // enterFullscreen: VidFast has no such command
+    } else {
+      message = { action: action };
+      if (fields) for (name in fields) if (fields.hasOwnProperty(name)) message[name] = fields[name];
+    }
     try {
       // The documented API uses "*" because an embed may finish on a player
       // origin different from the public page URL. Commands contain no secrets.
@@ -1354,7 +1367,7 @@
     webOvT = setTimeout(function () { if (!webPaused) $('web-ov').className = 'ov off'; }, 3500);
     paintWebProgress();
   }
-  function playWebPage(url, title, d, progressId, epCtx) {
+  function playWebPage(url, title, d, progressId, epCtx, src) {
     // Chained "up next" playback starts while this screen is already showing;
     // keep the page that was under the player so BACK still lands there.
     if (screen !== 'webs') overlayFrom = screen;
@@ -1366,6 +1379,7 @@
     webSe = epCtx ? epCtx.se : null;
     webEp = epCtx ? epCtx.ep : null;
     webLabel = epCtx ? epCtx.label : '';
+    webSrc = src || '';
     webProgress = readWebProgress();
     webDuration = 0;
     webPaused = true;
@@ -1393,8 +1407,10 @@
     }, 3000);
     webWaitT = setTimeout(function () {
       if (screen !== 'webs' || webApiReady) return;
-      // The player never answered: offer the way out instead of a black screen.
-      $('web-help').innerHTML = '<span class="key">▼</span>open full-page player<span class="key">BACK</span>cancel';
+      // The player never answered: offer the backup, then the way out.
+      $('web-help').innerHTML = webSrc !== 'alt'
+        ? '<span class="key">▼</span>try the backup player<span class="key">BACK</span>cancel'
+        : '<span class="key">▼</span>open full-page player<span class="key">BACK</span>cancel';
       $('web-ov').className = 'ov';
     }, 8000);
   }
@@ -1470,7 +1486,9 @@
     hideNextUp();
     if (!next || screen !== 'webs' || !webD) return;
     epi = { d: webD, season: next.season, i: next.season.eps.indexOf(next.ep) };
-    playMedia(webD, next.season.n, next.ep.n, episodeLabelFor(next.season, next.ep));
+    // Keep chained episodes on the same provider — if the backup is on, the
+    // primary already failed once, so don't bounce back to it.
+    playMedia(webD, next.season.n, next.ep.n, episodeLabelFor(next.season, next.ep), webSrc);
   }
   function fullPageWebPlayer(url, d) {
     if (url) {
@@ -1506,7 +1524,8 @@
     else if (k === K.PAUSE) postWebCommand('pause');
     else if (k === K.DOWN) {
       if (webApiReady) postWebCommand('enterFullscreen');
-      else fullPageWebPlayer('', webD);   // embed never answered: take over the page
+      else if (webSrc !== 'alt') playMedia(webD, webSe, webEp, webLabel, 'alt');   // embed dead: try the backup
+      else fullPageWebPlayer('', webD);   // backup also dead: take over the page
     }
     else if (k === K.LEFT || k === K.RIGHT || k === K.REW || k === K.FF) {
       var now = Date.now();
@@ -1574,6 +1593,32 @@
     clearTimeout(webWaitT);
     var data = message.data, status = data.player_status;
     if (typeof data.player_progress === 'number') { webProgress = data.player_progress; paintWebProgress(); }
+    if (typeof data.player_duration === 'number') { webDuration = data.player_duration; paintWebProgress(); }
+    // VidFast wraps the same PLAYER_EVENT envelope but reports
+    // {event, currentTime, duration, playing} instead of player_status.
+    if (typeof data.event === 'string') {
+      if (typeof data.currentTime === 'number') webProgress = data.currentTime;
+      if (typeof data.duration === 'number') webDuration = data.duration;
+      paintWebProgress();
+      if (data.event === 'playerstatus') {
+        webPaused = !data.playing;
+        return;
+      }
+      if (data.event === 'timeupdate') {
+        // timeupdate only fires while playing; if VidFast never sends a
+        // 'play' event this still marks playback live for OK toggling.
+        webPaused = false;
+        if (Date.now() - webLastSavedAt > 5000) {
+          webLastSavedAt = Date.now();
+          saveWebProgress();
+        }
+        return;
+      }
+      if (data.event === 'play') status = 'playing';
+      else if (data.event === 'pause') status = 'paused';
+      else if (data.event === 'seeked') status = 'seeked';
+      else if (data.event === 'ended') status = 'completed';
+    }
     if (status === 'playing' || status === 'paused' || status === 'seeked') saveWebProgress();
     if (status === 'playing') {
       webPaused = false;

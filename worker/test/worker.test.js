@@ -62,6 +62,51 @@ test('returns a player URL without fetching it so Pages remains the iframe refer
   assert.deepEqual(await response.json(), { url: 'https://player.example.invalid/movie/533533' });
 });
 
+test('src=alt returns the backup player URL from its own secret', async () => {
+  const env = {
+    ACCESS_PATH: 'private_test_path_1234',
+    APP_ORIGIN: 'https://chigala.github.io',
+    TRAILER_URL_TEMPLATE: 'https://player.example.invalid/{type}/{tmdb}',
+    TRAILER_URL_TEMPLATE_ALT: 'https://backup.example.invalid/{type}/{tmdb}',
+  };
+  const response = await handleRequest(new Request(
+    'https://worker.example.invalid/private_test_path_1234/player?type=movie&tmdb=533533&src=alt',
+    { headers: { Origin: env.APP_ORIGIN } },
+  ), env);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { url: 'https://backup.example.invalid/movie/533533' });
+});
+
+test('src=alt without the backup secret returns 503 instead of the primary', async () => {
+  const env = {
+    ACCESS_PATH: 'private_test_path_1234',
+    APP_ORIGIN: 'https://chigala.github.io',
+    TRAILER_URL_TEMPLATE: 'https://player.example.invalid/{type}/{tmdb}',
+  };
+  const response = await handleRequest(new Request(
+    'https://worker.example.invalid/private_test_path_1234/player?type=movie&tmdb=533533&src=alt',
+    { headers: { Origin: env.APP_ORIGIN } },
+  ), env);
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: 'ALT_PLAYER_NOT_CONFIGURED' });
+});
+
+test('rejects an unknown src value', async () => {
+  const env = {
+    ACCESS_PATH: 'private_test_path_1234',
+    APP_ORIGIN: 'https://chigala.github.io',
+    TRAILER_URL_TEMPLATE: 'https://player.example.invalid/{type}/{tmdb}',
+  };
+  const response = await handleRequest(new Request(
+    'https://worker.example.invalid/private_test_path_1234/player?type=movie&tmdb=533533&src=bogus',
+    { headers: { Origin: env.APP_ORIGIN } },
+  ), env);
+
+  assert.equal(response.status, 400);
+});
+
 test('builds the movie path from a base URL secret', async () => {
   const env = {
     ACCESS_PATH: 'private_test_path_1234',
