@@ -47,12 +47,20 @@
   #bigIcon { font-size: 96px; color: #fff; text-shadow: 0 0 24px rgba(0,0,0,.9); }
   #centerMsg { margin-top: 22px; font-size: 26px; color: #eee; text-shadow: 0 2px 8px #000; }
 
-  /* subtitle / source menu */
-  #menu { inset: auto 48px 180px auto; top: auto; left: auto; min-width: 380px; max-width: 560px; background: rgba(20,20,22,.96); border: 1px solid #333; border-radius: 14px; padding: 18px 0; pointer-events: none; }
-  #menuTitle { font-size: 22px; color: #999; padding: 0 26px 12px; text-transform: uppercase; letter-spacing: .08em; }
-  .mi { padding: 14px 26px; font-size: 26px; color: #ddd; display: flex; align-items: center; gap: 14px; }
+  /* subtitle / source menu — capped to the viewport with internal scrolling
+     so long track lists can't overflow the TV screen */
+  #menu { inset: auto 48px 120px auto; top: auto; left: auto; min-width: 380px; max-width: 560px; max-height: calc(100vh - 220px); background: rgba(20,20,22,.96); border: 1px solid #333; border-radius: 14px; padding: 18px 0; pointer-events: none; display: flex; flex-direction: column; }
+  #menuTitle { font-size: 22px; color: #999; padding: 0 26px 12px; text-transform: uppercase; letter-spacing: .08em; flex: none; }
+  #menuItems { overflow-y: auto; min-height: 0; scrollbar-width: none; }
+  #menuItems::-webkit-scrollbar { width: 0; display: none; }
+  .mi { padding: 14px 26px; font-size: 26px; color: #ddd; display: flex; align-items: center; gap: 14px; flex: none; }
   .mi.focus { background: #ff4d4f; color: #fff; }
   .mi .check { width: 26px; font-size: 24px; }
+
+  /* custom subtitle renderer — native <track> cues don't paint on TV webviews */
+  #subs { top: auto; bottom: 12%; left: 6%; right: 6%; text-align: center; transition: bottom .25s ease; }
+  #subs.up { bottom: 23%; }   /* above the HUD while controls are visible */
+  #subs span { display: inline-block; background: rgba(0,0,0,.72); color: #fff; font-size: 2.1vw; line-height: 1.3; padding: 6px 18px; border-radius: 8px; margin-top: 5px; text-shadow: 0 1px 2px #000; }
 
   /* error / end screen */
   #overlay { display: flex; align-items: center; justify-content: center; flex-direction: column; background: rgba(0,0,0,.82); text-align: center; }
@@ -82,6 +90,8 @@
   <div id="menuTitle">Subtitles</div>
   <div id="menuItems"></div>
 </div>
+
+<div id="subs" class="layer"></div>
 
 <div id="overlay" class="layer hidden">
   <div id="overlayTitle"></div>
@@ -117,7 +127,7 @@
     bigIcon: el('bigIcon'), centerMsg: el('centerMsg'), menu: el('menu'), menuItems: el('menuItems'),
     menuTitle: el('menuTitle'), overlay: el('overlay'), overlayTitle: el('overlayTitle'),
     overlayMsg: el('overlayMsg'), overlayHint: el('overlayHint'), title: el('title'), crumb: el('crumb'),
-    barFill: el('barFill'), barDot: el('barDot'), tCur: el('tCur'), tDur: el('tDur')
+    barFill: el('barFill'), barDot: el('barDot'), tCur: el('tCur'), tDur: el('tDur'), subs: el('subs')
   };
 
   /* ---------------- state ---------------- */
@@ -145,9 +155,13 @@
   }
   function showHud() {
     ui.top.classList.remove('hidden'); ui.hud.classList.remove('hidden');
+    ui.subs.classList.add('up');
     clearTimeout(hudTimer);
     hudTimer = setTimeout(function () {
-      if (!menuOpen && !video.paused) { ui.top.classList.add('hidden'); ui.hud.classList.add('hidden'); }
+      if (!menuOpen && !video.paused) {
+        ui.top.classList.add('hidden'); ui.hud.classList.add('hidden');
+        ui.subs.classList.remove('up');
+      }
     }, 4000);
   }
   function spinner(on, msg) {
@@ -336,32 +350,76 @@
     if (t > 0 && video.duration && t < video.duration - 10) video.currentTime = t;
   }
 
-  /* ---------------- subtitles ---------------- */
+  /* ---------------- subtitles ----------------
+   * TV webviews don't paint native <track> cues, so we fetch the VTT through
+   * the (CORS-enabled) media proxy, parse it ourselves and render the active
+   * cue into #subs on every timeupdate. */
+  var subCues = [], subActive = '';
+  function trackList() { return (resolved && resolved.tracks) || []; }
   function loadTracks() {
-    // wipe any previous tracks
-    while (video.firstChild) video.removeChild(video.firstChild);
-    var tracks = (resolved && resolved.tracks) || [];
-    for (var i = 0; i < tracks.length; i++) {
-      var tr = document.createElement('track');
-      tr.kind = 'subtitles';
-      tr.label = tracks[i].label || ('Track ' + (i + 1));
-      if (tracks[i].language) tr.srclang = tracks[i].language;
-      tr.src = tracks[i].src;
-      video.appendChild(tr);
-    }
+    subCues = []; subActive = ''; ui.subs.innerHTML = '';
     setTrack(-1);
   }
   function setTrack(idx) {
-    for (var i = 0; i < video.textTracks.length; i++) {
-      video.textTracks[i].mode = (i === idx) ? 'showing' : 'disabled';
-    }
     video._subIdx = idx;
+    subCues = []; subActive = ''; ui.subs.innerHTML = '';
+    if (idx < 0) return;
+    var track = trackList()[idx];
+    if (!track || !track.src) return;
+    ui.centerMsg.textContent = 'Loading subtitles…';
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', track.src, true);
+    xhr.timeout = 10000;
+    xhr.onload = function () {
+      if (video._subIdx !== idx) return;
+      ui.centerMsg.textContent = '';
+      if (xhr.status >= 200 && xhr.status < 300) { subCues = parseVtt(xhr.responseText || ''); paintSubs(); }
+    };
+    xhr.onerror = xhr.ontimeout = function () { if (video._subIdx === idx) ui.centerMsg.textContent = ''; };
+    try { xhr.send(); } catch (e) { ui.centerMsg.textContent = ''; }
+  }
+  function vttTime(s) {
+    var m = /(?:(\d+):)?(\d+):(\d+)[.,](\d+)/.exec(s);
+    if (!m) return -1;
+    var f = parseFloat('0.' + m[4]);
+    return parseInt(m[1] || '0', 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10) + (f === f ? f : 0);
+  }
+  function parseVtt(text) {
+    var cues = [], blocks = String(text).replace(/\r/g, '').split(/\n\n+/);
+    for (var i = 0; i < blocks.length; i++) {
+      var lines = blocks[i].split('\n');
+      if (lines.length && lines[0].indexOf('WEBVTT') === 0) continue;
+      var li = 0;
+      while (li < lines.length && lines[li].indexOf('-->') < 0) li++;   // skip cue ids
+      if (li >= lines.length) continue;
+      var tm = /(\S+)\s*-->\s*(\S+)/.exec(lines[li]);
+      if (!tm) continue;
+      var start = vttTime(tm[1]), end = vttTime(tm[2]);
+      if (start < 0 || end < 0 || end <= start) continue;
+      var txt = lines.slice(li + 1).join('\n')
+        .replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
+      if (txt) cues.push({ s: start, e: end, t: txt });
+    }
+    return cues;
+  }
+  function escHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function paintSubs() {
+    if (!subCues.length) { if (subActive) { subActive = ''; ui.subs.innerHTML = ''; } return; }
+    var t = video.currentTime, hit = '';
+    for (var i = 0; i < subCues.length; i++) {
+      if (t >= subCues[i].s && t < subCues[i].e) { hit = subCues[i].t; break; }
+    }
+    if (hit === subActive) return;
+    subActive = hit;
+    var lines = hit.split('\n'), html = '';
+    for (var j = 0; j < lines.length; j++) html += (j ? '<br>' : '') + '<span>' + escHtml(lines[j]) + '</span>';
+    ui.subs.innerHTML = html;
   }
 
   /* ---------------- menu ---------------- */
   function openMenu() {
-    var tracks = video.textTracks;
-    if (!tracks || !tracks.length) { ui.centerMsg.textContent = 'No subtitles for this title'; setTimeout(function () { if (!menuOpen) ui.centerMsg.textContent = ''; }, 1800); return; }
+    var tracks = trackList();
+    if (!tracks.length) { ui.centerMsg.textContent = 'No subtitles for this title'; setTimeout(function () { if (!menuOpen) ui.centerMsg.textContent = ''; }, 1800); return; }
     menuOpen = true; menuFocus = (video._subIdx == null ? -1 : video._subIdx) + 1;
     paintMenu();
     ui.menu.classList.remove('hidden');
@@ -371,15 +429,21 @@
   function paintMenu() {
     var html = '';
     var items = ['Off'];
-    for (var i = 0; i < video.textTracks.length; i++) items.push(video.textTracks[i].label || ('Track ' + (i + 1)));
+    var tracks = trackList();
+    for (var i = 0; i < tracks.length; i++) items.push(tracks[i].label || ('Track ' + (i + 1)));
     for (var j = 0; j < items.length; j++) {
       var sel = (j - 1) === video._subIdx;
-      html += '<div class="mi' + (j === menuFocus ? ' focus' : '') + '"><span class="check">' + (sel ? '✓' : '') + '</span>' + items[j] + '</div>';
+      html += '<div class="mi' + (j === menuFocus ? ' focus' : '') + '"><span class="check">' + (sel ? '✓' : '') + '</span>' + escHtml(items[j]) + '</div>';
     }
     ui.menuItems.innerHTML = html;
+    // keep the focused row visible inside the scrollable list
+    var focEl = ui.menuItems.children[menuFocus];
+    if (focEl && ui.menuItems.clientHeight) {
+      ui.menuItems.scrollTop = Math.max(0, focEl.offsetTop - ui.menuItems.clientHeight / 2 + focEl.clientHeight / 2);
+    }
   }
   function menuKey(k) {
-    var n = video.textTracks.length + 1;
+    var n = trackList().length + 1;
     if (k === 38) menuFocus = (menuFocus - 1 + n) % n;        // up
     else if (k === 40) menuFocus = (menuFocus + 1) % n;       // down
     else if (k === 13) { setTrack(menuFocus - 1); closeMenu(); return true; } // ok
@@ -457,6 +521,7 @@
       ui.barDot.style.left = pct + '%';
     }
     ui.tCur.textContent = fmt(c); ui.tDur.textContent = fmt(d);
+    paintSubs();
   });
   video.addEventListener('error', function () {
     if (!video.error) return;
@@ -499,7 +564,7 @@
       resolved = data;
       if (!isRetry) { sourceIdx = 0; } else { sourceIdx = Math.min(sourceIdx, data.sources.length - 1); }
       var crumb = P.type === 'tv' ? 'S' + P.season + ' · E' + P.episode + ' — ' : '';
-      crumb += data.provider === 'vidrock' ? 'backup source' : 'primary source';
+      crumb += data.provider === 'moviesapi' ? 'primary source' : 'backup source';
       ui.title.textContent = P.title || (P.type === 'tv' ? 'Episode' : 'Movie');
       ui.crumb.textContent = crumb;
       loadTracks();

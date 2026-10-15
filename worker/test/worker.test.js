@@ -606,6 +606,9 @@ test('stream falls back to vidrock, decrypts sources, proxies with origin+refere
     if (url === 'https://moviesapi.to/api/vidora/v1/movie/9806') {
       return new Response(JSON.stringify({ result: false, message: 'Movie not yet encoded' }), { status: 404 });
     }
+    if (url.startsWith('https://vidsrc.buzz/')) {
+      return new Response('<html><body>no embedded config here</body></html>', { headers: { 'Content-Type': 'text/html' } });
+    }
     if (url === 'https://vidrock.net/api/movie/9806') {
       return new Response(JSON.stringify({
         Nova: { url: deadUrl, type: 'hls' },
@@ -667,6 +670,9 @@ test('stream returns 404 when no provider has the title', async (t) => {
     const url = String(input);
     if (url.startsWith('https://moviesapi.to/')) {
       return new Response(JSON.stringify({ result: false, message: 'Movie not yet encoded' }), { status: 404 });
+    }
+    if (url.startsWith('https://vidsrc.buzz/')) {
+      return new Response('<html><body>no embedded config here</body></html>', { headers: { 'Content-Type': 'text/html' } });
     }
     if (url.startsWith('https://vidrock.net/')) {
       return new Response(JSON.stringify({ Nova: { url: null } }), { headers: { 'Content-Type': 'application/json' } });
@@ -795,6 +801,9 @@ test('stream drops plaintext vidrock decoy URLs served to datacenter IPs', async
     if (url.startsWith('https://moviesapi.to/')) {
       return new Response(JSON.stringify({ result: false, message: 'Movie not yet encoded' }), { status: 404 });
     }
+    if (url.startsWith('https://vidsrc.buzz/')) {
+      return new Response('<html><body>no embedded config here</body></html>', { headers: { 'Content-Type': 'text/html' } });
+    }
     if (url.startsWith('https://vidrock.net/')) {
       // the datacenter decoy: same plaintext playlist for every "source"
       return new Response(JSON.stringify({
@@ -820,4 +829,89 @@ test('seal drops plaintext decoy URLs from client-fetched bodies too', async () 
   }), STREAM_ENV);
   assert.equal(resolved.status, 404);
   assert.equal((await resolved.json()).error, 'STREAM_NOT_FOUND');
+});
+
+/* ---------- vidsrc.buzz resolver ---------- */
+
+test('stream falls back to vidsrcbuzz, mints streams, serves subs', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const config = { type: 'movie', id: 'tt0137523', s: 0, e: 0, t: 'tok123' };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = String(input);
+    const headers = new Headers(init.headers || {});
+    if (url === 'https://moviesapi.to/api/vidora/v1/movie/550') {
+      return new Response(JSON.stringify({ result: false, message: 'Movie not yet encoded' }), { status: 404 });
+    }
+    if (url === 'https://vidsrc.buzz/embed/movie/550') {
+      return new Response('<html><script>var Q = ' + JSON.stringify(config) + ';\n</script></html>', {
+        headers: { 'Content-Type': 'text/html' },
+      });
+    }
+    if (url.startsWith('https://vidsrc.buzz/pl/api.php?')) {
+      const api = new URL(url);
+      assert.equal(headers.get('referer'), 'https://vidsrc.buzz/embed/movie/550');
+      const action = api.searchParams.get('a');
+      if (action === 'sources') {
+        return new Response(JSON.stringify({
+          status: 'ok',
+          servers: [{ ref: 'refA', name: 'Server VNY' }, { ref: 'refB', name: 'Server XPM1' }],
+        }), { headers: { 'Content-Type': 'application/json' } });
+      }
+      if (action === 'play') {
+        return new Response(JSON.stringify({ url: '/_stream?id=stream-' + api.searchParams.get('ref'), type: 'hls' }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (action === 'subs') {
+        return new Response(JSON.stringify({ subs: [{ label: 'English', lang: 'English', cc: 'us', ref: 'subref1' }] }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (action === 'sub') {
+        return new Response('WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nHello there', { headers: { 'Content-Type': 'text/vtt' } });
+      }
+      throw new Error('unexpected api action: ' + action);
+    }
+    if (url === 'https://vidsrc.buzz/_stream?id=stream-refA') {
+      return new Response('#EXTM3U\n#EXTINF:4,\nseg-1.ts', { headers: { 'Content-Type': 'application/vnd.apple.mpegurl' } });
+    }
+    if (url === 'https://vidsrc.buzz/seg-1.ts') {
+      return new Response(new Uint8Array([5, 5]), { headers: { 'Content-Type': 'video/mp2t' } });
+    }
+    if (url.startsWith('https://vidrock.net/')) throw new Error('vidrock must not be reached when vidsrcbuzz succeeds');
+    throw new Error('unexpected synthetic URL: ' + url);
+  };
+
+  const headers = { Origin: STREAM_ENV.APP_ORIGIN };
+  const buzzEnv = Object.assign({}, STREAM_ENV, { VIDSRCBUZZ_ENABLED: '1' });
+  const resolved = await handleRequest(new Request(
+    'https://worker.example.invalid/' + STREAM_ENV.ACCESS_PATH + '/stream?type=movie&tmdb=550',
+    { headers },
+  ), buzzEnv);
+  assert.equal(resolved.status, 200);
+  const data = await resolved.json();
+  assert.equal(data.provider, 'vidsrcbuzz');
+  assert.equal(data.sources.length, 2);
+  assert.equal(data.sources[0].name, 'Server VNY');
+  assert.match(data.sources[0].url, /\/media\//);
+  assert.doesNotMatch(data.sources[0].url, /vidsrc\.buzz/);
+  assert.equal(data.tracks.length, 1);
+  assert.equal(data.tracks[0].label, 'English');
+
+  // the sealed minted stream plays through the proxy
+  const manifest = await handleRequest(new Request(data.sources[0].url, { headers }), STREAM_ENV);
+  assert.equal(manifest.status, 200);
+  const manifestText = await manifest.text();
+  assert.match(manifestText, /worker\.example\.invalid/);
+  assert.doesNotMatch(manifestText, /vidsrc\.buzz/);
+  const segmentUrl = manifestText.split('\n').find((line) => line && line[0] !== '#');
+  const segment = await handleRequest(new Request(segmentUrl, { headers }), STREAM_ENV);
+  assert.deepEqual(Array.from(new Uint8Array(await segment.arrayBuffer())), [5, 5]);
+
+  // sealed subtitles serve through the proxy too
+  const sub = await handleRequest(new Request(data.tracks[0].src, { headers }), STREAM_ENV);
+  assert.equal(sub.status, 200);
+  assert.match(await sub.text(), /WEBVTT/);
 });
