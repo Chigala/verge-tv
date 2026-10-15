@@ -1382,7 +1382,7 @@
   var webOvT, webWaitT, webGateT, webStatusT, webPollT = 0, webBaseUrl = '', webOrigin = '', webProgress = 0,
       webDuration = 0, webPaused = true, webApiReady = false, webProgressKey = '',
       webLastSavedAt = 0, webSeekStep = 10, webLastSeek = 0, webSrc = '',
-      webCmdShape = '', webEverPlayed = false,
+      webCmdShape = '', webEverPlayed = false, webResumeAt = 0, webResumeSentAt = 0,
       webPid = '', webD = null, webSe = null, webEp = null, webLabel = '',
       nextUp = null, nextUpT = 0, nextUpN = 0;
   function webUrlAt(url, seconds) {
@@ -1482,6 +1482,12 @@
     webApiReady = false;
     webCmdShape = '';
     webEverPlayed = false;
+    // cinesrc ignores the ?startAt= URL param, so for it the saved position is
+    // applied by a seek command once the player signals it exists (see the
+    // message handler). Until that seek lands, early timeupdates near zero are
+    // noise and must never overwrite the saved progress.
+    webResumeAt = webProgress >= 5 ? webProgress : 0;
+    webResumeSentAt = 0;
     webLastSavedAt = 0;
     webSeekStep = 10;
     webLastSeek = 0;
@@ -1671,6 +1677,7 @@
       var direction = (k === K.LEFT || k === K.REW) ? -1 : 1;
       webProgress = Math.max(0, webProgress + direction * webSeekStep);
       if (webDuration) webProgress = Math.min(webDuration - 1, webProgress);
+      webResumeAt = 0;   // a manual seek supersedes the pending resume
       postWebCommand('seek', { time: webProgress });
     }
     else if (k === K.UP) postWebCommand('getStatus');
@@ -1732,7 +1739,7 @@
     }
     // cinesrc speaks its own envelope: {type:'cinesrc:<event>'}. Like the
     // tagged API above, a redirected inner player origin can send these, so
-    // this lives above the origin check — event.source pinned the frame.
+    // this lives above the origin check.
     if (typeof message.type === 'string' && message.type.indexOf('cinesrc:') === 0) {
       var cEv = message.type.slice(8);
       if (cEv === 'ready' || cEv === 'play') {
@@ -1740,7 +1747,21 @@
         webCmdShape = 'cinesrc';
         clearTimeout(webWaitT);
       }
-      if (typeof message.currentTime === 'number') webProgress = message.currentTime;
+      // cinesrc ignores ?startAt=, so the saved position goes out as a seek
+      // command on the first lifecycle event (whichever arrives first).
+      if (webResumeAt && !webResumeSentAt && (cEv === 'ready' || cEv === 'play' || cEv === 'loadedmetadata')) {
+        webResumeSentAt = Date.now();
+        postWebCommand('seek', { time: webResumeAt });
+      }
+      // Until that seek lands, positions far below it are pre-seek noise:
+      // never adopt or save them — they would wipe the saved progress.
+      var ct = typeof message.currentTime === 'number' ? message.currentTime : null;
+      if (webResumeAt && ct !== null) {
+        if (ct >= webResumeAt - 15) webResumeAt = 0;   // seek landed
+        else if (webResumeSentAt && Date.now() - webResumeSentAt > 12000) webResumeAt = 0;   // seek lost: give up
+        else ct = null;   // still waiting for the jump
+      }
+      if (ct !== null) webProgress = ct;
       if (typeof message.duration === 'number') webDuration = message.duration;
       if (cEv === 'play') {
         webPaused = false;
