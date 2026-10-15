@@ -1371,7 +1371,7 @@
   var webOvT, webWaitT, webStatusT, webPollT = 0, webBaseUrl = '', webOrigin = '', webProgress = 0,
       webDuration = 0, webPaused = true, webApiReady = false, webProgressKey = '',
       webLastSavedAt = 0, webSeekStep = 10, webLastSeek = 0, webSrc = '',
-      webCmdShape = '', webEverPlayed = false, webGateT = 0,
+      webCmdShape = '', webEverPlayed = false,
       webPid = '', webD = null, webSe = null, webEp = null, webLabel = '',
       nextUp = null, nextUpT = 0, nextUpN = 0;
   function webUrlAt(url, seconds) {
@@ -1454,7 +1454,9 @@
     webLastSeek = 0;
     hideNextUp();
     $('web-title').textContent = title;
-    $('web-help').innerHTML = '<span class="key">OK</span>play/pause<span class="key">◀ ▶</span>seek<span class="key">▼</span>fullscreen<span class="key">BACK</span>close';
+    $('web-help').innerHTML = webSrc === 'alt'
+      ? 'the backup source plays on its own<span class="key">BACK</span>close'
+      : '<span class="key">OK</span>play/pause<span class="key">◀ ▶</span>seek<span class="key">▼</span>fullscreen<span class="key">BACK</span>close';
     paintWebProgress();
     $('web-ov').className = 'ov';
     $('web-frame').src = webUrlAt(url, webProgress);
@@ -1463,7 +1465,6 @@
     clearTimeout(webOvT);
     clearTimeout(webWaitT);
     clearTimeout(webStatusT);
-    clearTimeout(webGateT);
     clearInterval(webPollT);
     webOvT = setTimeout(function () { $('web-ov').className = 'ov off'; }, 4500);
     // The embed only volunteers status when it feels like it; keep asking so
@@ -1471,27 +1472,21 @@
     webPollT = setInterval(function () {
       if (screen === 'webs' && !nextUp) postWebCommand('getStatus');
     }, 3000);
-    webWaitT = setTimeout(function () {
-      if (screen !== 'webs' || webApiReady) return;
-      // The player never answered: offer the backup, then the way out.
-      $('web-help').innerHTML = webSrc !== 'alt'
-        ? '<span class="key">▼</span>try the backup player<span class="key">BACK</span>cancel'
-        : '<span class="key">▼</span>open full-page player<span class="key">BACK</span>cancel';
-      $('web-ov').className = 'ov';
-    }, 8000);
-    // A VidFast-style player can answer getStatus yet sit on a click gate and
-    // never start. Give it longer than a slow load, then offer the way out.
-    webGateT = setTimeout(function () {
-      if (screen !== 'webs' || webEverPlayed || webSrc !== 'alt') return;
-      $('web-help').innerHTML = '<span class="key">▼</span>open full-page player<span class="key">BACK</span>cancel';
-      $('web-ov').className = 'ov';
-    }, 15000);
+    // The primary may die silently; if it never answers, offer the backup.
+    // The backup is a black box (autoplays, never answers postMessage), so
+    // there is nothing to nag about on it — BACK is the way out.
+    if (webSrc !== 'alt') {
+      webWaitT = setTimeout(function () {
+        if (screen !== 'webs' || webApiReady) return;
+        $('web-help').innerHTML = '<span class="key">▼</span>try the backup player<span class="key">BACK</span>cancel';
+        $('web-ov').className = 'ov';
+      }, 8000);
+    }
   }
   function closeWebPage() {
     clearTimeout(webOvT);
     clearTimeout(webWaitT);
     clearTimeout(webStatusT);
-    clearTimeout(webGateT);
     clearInterval(webPollT);
     hideNextUp();
     saveWebProgress();
