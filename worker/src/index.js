@@ -8,6 +8,12 @@ const STATIC_RESOLVER_MAX_MS = 14000;
 const RESOLVER_MAX_MS = 58000;
 const UPSTREAM_FETCH_MAX_MS = 8000;
 const UPSTREAM_BODY_MAX_MS = 5000;
+const NATIVE_STREAM_TTL_SECONDS = 6 * 60 * 60;
+const STREAM_API_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+const MOVIESAPI_ORIGIN = 'https://moviesapi.to';
+const MOVIESAPI_PLAYER_KEY = '3a67e8866ae1d2bb9e81fe7f73315a56eb3bdf5e3e755c7554c8be6910aa6b13';
+const VIDROCK_ORIGIN = 'https://vidrock.net';
+const VIDROCK_KEY_HEX = '7f3e9c2a8b5d1f4e6a9c3b7d2e5f8a1c4b6d9e2f5a8c1b4d7e9f2a5c8b1d4e7f';
 
 export default {
   async fetch(request, env) {
@@ -47,6 +53,11 @@ export async function handleRequest(request, env) {
     if (!env.PLAYBACK_TOKEN_SECRET) return safeError('WORKER_NOT_CONFIGURED', 503, cors);
     if (!originAllowed(request, env)) return safeError('ORIGIN_NOT_ALLOWED', 403, cors);
     return resolveTrailer(request, env, rootPath, cors);
+  }
+  if (requestUrl.pathname === rootPath + '/stream') {
+    if (!env.PLAYBACK_TOKEN_SECRET) return safeError('WORKER_NOT_CONFIGURED', 503, cors);
+    if (!originAllowed(request, env)) return safeError('ORIGIN_NOT_ALLOWED', 403, cors);
+    return streamNative(request, env, rootPath, cors);
   }
   if (requestUrl.pathname.indexOf(rootPath + '/media/') === 0) {
     if (!env.PLAYBACK_TOKEN_SECRET) return safeError('WORKER_NOT_CONFIGURED', 503, cors);
@@ -130,6 +141,196 @@ function disclosePlayerUrl(request, env, cors) {
   } catch (error) {
     return safeError(errorCode(error, 'INVALID_TEMPLATE'), statusForError(error, 500), cors);
   }
+}
+
+/*
+ * /stream — native-player stream resolution.
+ *
+ * Chain: moviesapi.to (primary) -> vidrock.net (backup). Both return direct
+ * HLS URLs, but those CDNs demand Referer/Origin headers that a TV webview
+ * cannot set on <video> requests, so every URL is sealed into the existing
+ * /media/ proxy, which injects the stored headers and rewrites playlists.
+ *
+ * Response: { provider, sources: [{ name, type, url }], tracks: [{ label, language, src }], expiresAt }
+ * sources is ordered; the player fails over between them (vidrock sources die
+ * independently) and re-calls /stream when all are exhausted.
+ */
+async function streamNative(request, env, rootPath, cors) {
+  const url = new URL(request.url);
+  const type = url.searchParams.get('type');
+  const tmdb = url.searchParams.get('tmdb') || '';
+  const season = url.searchParams.get('season') || '';
+  const episode = url.searchParams.get('episode') || '';
+
+  if (type !== 'movie' && type !== 'tv') return safeError('INVALID_MEDIA_TYPE', 400, cors);
+  if (!/^\d{1,12}$/.test(tmdb)) return safeError('INVALID_TMDB_ID', 400, cors);
+  if (type === 'tv' && !/^\d{1,4}$/.test(season)) return safeError('INVALID_SEASON', 400, cors);
+  if (type === 'tv' && !/^\d{1,5}$/.test(episode)) return safeError('INVALID_EPISODE', 400, cors);
+
+  const expires = Math.floor(Date.now() / 1000) + NATIVE_STREAM_TTL_SECONDS;
+  const sealMedia = async (target, headers, filename) => {
+    assertSafeUpstreamUrl(target, env);
+    const token = await sealPayload({ u: target, e: expires, h: headers }, env.PLAYBACK_TOKEN_SECRET);
+    const mediaUrl = new URL(request.url);
+    mediaUrl.pathname = rootPath + '/media/' + token + '/' + filename;
+    mediaUrl.search = '';
+    return mediaUrl.toString();
+  };
+
+  try {
+    const resolved = await resolveMoviesapiStream(type, tmdb, season, episode, env);
+    if (resolved) {
+      const pageUrl = MOVIESAPI_ORIGIN + (type === 'tv' ? '/tv/' + tmdb + '/' + season + '/' + episode : '/movie/' + tmdb);
+      const sources = [{
+        name: 'primary',
+        type: 'hls',
+        url: await sealMedia(resolved.url, { Referer: MOVIESAPI_ORIGIN + '/' }, 'master.m3u8'),
+      }];
+      const tracks = [];
+      // Embedded tracks are often empty; their player then calls the separate
+      // subtitle index — mirror that.
+      let trackList = resolved.tracks;
+      if (!trackList.length) {
+        try { trackList = await resolveMoviesapiSubtitleTracks(type, tmdb, season, episode, env); } catch (_) { /* best-effort */ }
+      }
+      for (const track of trackList.slice(0, 24)) {
+        tracks.push({
+          label: track.label,
+          language: track.language,
+          src: await sealMedia(track.src, { Referer: pageUrl, 'x-player-key': moviesapiKey(env) }, 'subtitle-' + (tracks.length + 1) + '.vtt'),
+        });
+      }
+      return json({ provider: 'moviesapi', sources, tracks, expiresAt: expires }, 200, cors);
+    }
+  } catch (_) { /* primary unavailable -> try the backup */ }
+
+  try {
+    const vidrockSources = await resolveVidrockStreams(type, tmdb, season, episode, env);
+    if (vidrockSources.length) {
+      const mediaHeaders = { Referer: VIDROCK_ORIGIN + '/', Origin: VIDROCK_ORIGIN };
+      const sources = [];
+      for (const source of vidrockSources.slice(0, 6)) {
+        sources.push({
+          name: source.name,
+          type: source.type,
+          url: await sealMedia(source.url, mediaHeaders, source.type === 'mp4' ? 'video.mp4' : 'master.m3u8'),
+        });
+      }
+      // Subtitles come from moviesapi's community subtitle index, which is
+      // keyed by TMDB id and works even when the movie itself is unencoded.
+      const tracks = [];
+      try {
+        const subtitleTracks = await resolveMoviesapiSubtitleTracks(type, tmdb, season, episode, env);
+        const subPageUrl = MOVIESAPI_ORIGIN + (type === 'tv' ? '/tv/' + tmdb + '/' + season + '/' + episode : '/movie/' + tmdb);
+        for (const track of subtitleTracks.slice(0, 24)) {
+          tracks.push({
+            label: track.label,
+            language: track.language,
+            src: await sealMedia(track.src, { Referer: subPageUrl, 'x-player-key': moviesapiKey(env) }, 'subtitle-' + (tracks.length + 1) + '.vtt'),
+          });
+        }
+      } catch (_) { /* subtitles are best-effort */ }
+      return json({ provider: 'vidrock', sources, tracks, expiresAt: expires }, 200, cors);
+    }
+  } catch (_) { /* backup unavailable */ }
+
+  return safeError('STREAM_NOT_FOUND', 404, cors);
+}
+
+function moviesapiKey(env) {
+  return String(env.MOVIESAPI_PLAYER_KEY || MOVIESAPI_PLAYER_KEY).trim();
+}
+
+async function resolveMoviesapiStream(type, tmdb, season, episode, env) {
+  const path = type === 'tv' ? '/v1/tv/' + tmdb + '/' + season + '/' + episode : '/v1/movie/' + tmdb;
+  const pagePath = type === 'tv' ? '/tv/' + tmdb + '/' + season + '/' + episode : '/movie/' + tmdb;
+  const response = await fetch(MOVIESAPI_ORIGIN + '/api/vidora' + path, {
+    headers: { 'x-player-key': moviesapiKey(env), Referer: MOVIESAPI_ORIGIN + pagePath, 'User-Agent': STREAM_API_AGENT },
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body || body.result !== true || !Array.isArray(body.sources) || !body.sources[0] || !body.sources[0].url) {
+    return null;
+  }
+  const tracks = [];
+  const embedded = Array.isArray(body.sources[0].tracks) ? body.sources[0].tracks : [];
+  for (const track of embedded) {
+    if (track && track.file) {
+      tracks.push({
+        label: String(track.label || 'Subtitles').slice(0, 80),
+        language: String(track.language || '').slice(0, 12),
+        src: absoluteMoviesapiUrl(track.file),
+      });
+    }
+  }
+  return { url: String(body.sources[0].url), tracks };
+}
+
+async function resolveMoviesapiSubtitleTracks(type, tmdb, season, episode, env) {
+  const path = type === 'tv' ? 'tv/' + tmdb + '/' + season + '/' + episode : 'movie/' + tmdb;
+  const pagePath = type === 'tv' ? '/tv/' + tmdb + '/' + season + '/' + episode : '/movie/' + tmdb;
+  const response = await fetch(MOVIESAPI_ORIGIN + '/api/vidora/v1/subtitles/' + path, {
+    headers: { 'x-player-key': moviesapiKey(env), Referer: MOVIESAPI_ORIGIN + pagePath, 'User-Agent': STREAM_API_AGENT },
+  });
+  if (!response.ok) return [];
+  const body = await response.json().catch(() => null);
+  const list = body && Array.isArray(body.tracks) ? body.tracks : [];
+  const tracks = [];
+  for (const track of list) {
+    if (track && track.src) {
+      tracks.push({
+        label: String(track.label || 'Subtitles').slice(0, 80),
+        language: String(track.language || '').slice(0, 12),
+        // Their embed maps track.src as `/api/vidora/${src}`.
+        src: absoluteMoviesapiUrl('/api/vidora/' + String(track.src).replace(/^\/+/, '')),
+      });
+    }
+  }
+  return tracks;
+}
+
+function absoluteMoviesapiUrl(value) {
+  const text = String(value || '');
+  if (/^https?:\/\//i.test(text)) return text;
+  return new URL(text, MOVIESAPI_ORIGIN).toString();
+}
+
+let vidrockKeyCache = null;
+
+async function vidrockDecryptKey(env) {
+  if (vidrockKeyCache) return vidrockKeyCache;
+  const hex = String(env.VIDROCK_KEY_HEX || VIDROCK_KEY_HEX).trim();
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  vidrockKeyCache = await crypto.subtle.importKey('raw', bytes, { name: 'AES-GCM' }, false, ['decrypt']);
+  return vidrockKeyCache;
+}
+
+async function vidrockDecryptUrl(blob, key) {
+  const raw = base64UrlDecode(String(blob));
+  if (raw.length < 28) throw codedError('VIDROCK_CIPHERTEXT_SHORT', 502);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.slice(0, 12) }, key, raw.slice(12));
+  return new TextDecoder().decode(plain);
+}
+
+async function resolveVidrockStreams(type, tmdb, season, episode, env) {
+  const path = type === 'tv' ? 'tv/' + tmdb + '/' + season + '/' + episode : 'movie/' + tmdb;
+  const response = await fetch(VIDROCK_ORIGIN + '/api/' + path, { headers: { 'User-Agent': STREAM_API_AGENT } });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body || typeof body !== 'object' || Array.isArray(body)) return [];
+  const key = await vidrockDecryptKey(env);
+  const sources = [];
+  for (const name of Object.keys(body)) {
+    const entry = body[name];
+    if (!entry || typeof entry !== 'object' || !entry.url) continue;
+    try {
+      sources.push({
+        name: String(name).slice(0, 40),
+        type: entry.type === 'mp4' ? 'mp4' : 'hls',
+        url: await vidrockDecryptUrl(entry.url, key),
+      });
+    } catch (_) { /* skip undecryptable sources */ }
+  }
+  return sources;
 }
 
 async function resolveTrailer(request, env, rootPath, cors) {

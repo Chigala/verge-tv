@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verge Player</title>
+<!--
+  verge-tv native player (PoC).
+
+  Resolves streams via the worker's /stream endpoint (moviesapi -> vidrock
+  fallback chain) and plays them directly. The worker proxies all media
+  through /media/ with the Referer/Origin headers the CDNs demand, so no
+  custom headers are needed here.
+
+  Params: ?type=movie|tv &tmdb=ID [&season=S&episode=E] [&title=...]
+          [&startAt=SECONDS] [&api=WORKER_BASE_OVERRIDE]
+  Remote: OK play/pause · LEFT/RIGHT seek 10s · FF/RW 30s · UP subtitles ·
+          BACK save & exit
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: "Helvetica Neue", Arial, sans-serif; }
+  #video { position: absolute; inset: 0; width: 100%; height: 100%; background: #000; }
+  .layer { position: absolute; inset: 0; pointer-events: none; }
+  .hidden { display: none !important; }
+
+  /* top title bar */
+  #top { top: 0; bottom: auto; padding: 28px 48px; background: linear-gradient(rgba(0,0,0,.75), transparent); }
+  #title { font-size: 34px; font-weight: 700; color: #fff; text-shadow: 0 2px 8px #000; }
+  #crumb { font-size: 22px; color: #bbb; margin-top: 6px; }
+
+  /* bottom HUD */
+  #hud { top: auto; bottom: 0; padding: 40px 48px 44px; background: linear-gradient(transparent, rgba(0,0,0,.85)); }
+  #bar { position: relative; height: 8px; background: rgba(255,255,255,.25); border-radius: 4px; }
+  #barFill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #ff4d4f; border-radius: 4px; }
+  #barDot { position: absolute; top: 50%; left: 0; width: 22px; height: 22px; margin: -11px 0 0 -11px; background: #ff4d4f; border-radius: 50%; box-shadow: 0 0 12px rgba(0,0,0,.8); }
+  #times { display: flex; justify-content: space-between; margin-top: 14px; font-size: 24px; color: #eee; font-variant-numeric: tabular-nums; }
+  #hint { margin-top: 10px; font-size: 19px; color: #999; }
+  #hint b { color: #ddd; font-weight: 600; }
+
+  /* center spinner / big state */
+  #center { display: flex; align-items: center; justify-content: center; flex-direction: column; }
+  #spinner { width: 88px; height: 88px; border: 8px solid rgba(255,255,255,.18); border-top-color: #ff4d4f; border-radius: 50%; animation: spin 900ms linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #bigIcon { font-size: 96px; color: #fff; text-shadow: 0 0 24px rgba(0,0,0,.9); }
+  #centerMsg { margin-top: 22px; font-size: 26px; color: #eee; text-shadow: 0 2px 8px #000; }
+
+  /* subtitle / source menu */
+  #menu { inset: auto 48px 180px auto; top: auto; left: auto; min-width: 380px; max-width: 560px; background: rgba(20,20,22,.96); border: 1px solid #333; border-radius: 14px; padding: 18px 0; pointer-events: none; }
+  #menuTitle { font-size: 22px; color: #999; padding: 0 26px 12px; text-transform: uppercase; letter-spacing: .08em; }
+  .mi { padding: 14px 26px; font-size: 26px; color: #ddd; display: flex; align-items: center; gap: 14px; }
+  .mi.focus { background: #ff4d4f; color: #fff; }
+  .mi .check { width: 26px; font-size: 24px; }
+
+  /* error / end screen */
+  #overlay { display: flex; align-items: center; justify-content: center; flex-direction: column; background: rgba(0,0,0,.82); text-align: center; }
+  #overlayTitle { font-size: 40px; color: #fff; font-weight: 700; }
+  #overlayMsg { margin-top: 14px; font-size: 24px; color: #aaa; max-width: 900px; }
+  #overlayHint { margin-top: 34px; font-size: 22px; color: #888; }
+  #overlayHint b { color: #ddd; }
+</style>
+</head>
+<body>
+<video id="video" playsinline></video>
+
+<div id="top" class="layer hidden">
+  <div id="title"></div>
+  <div id="crumb"></div>
+</div>
+
+<div id="hud" class="layer hidden">
+  <div id="bar"><div id="barFill"></div><div id="barDot"></div></div>
+  <div id="times"><span id="tCur">0:00</span><span id="tDur">0:00</span></div>
+  <div id="hint"><b>OK</b> play/pause &nbsp;·&nbsp; <b>◀ ▶</b> seek &nbsp;·&nbsp; <b>▲</b> subtitles &nbsp;·&nbsp; <b>BACK</b> exit</div>
+</div>
+
+<div id="center" class="layer"><div id="spinner"></div><div id="bigIcon" class="hidden">⏸</div><div id="centerMsg"></div></div>
+
+<div id="menu" class="layer hidden">
+  <div id="menuTitle">Subtitles</div>
+  <div id="menuItems"></div>
+</div>
+
+<div id="overlay" class="layer hidden">
+  <div id="overlayTitle"></div>
+  <div id="overlayMsg"></div>
+  <div id="overlayHint"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ---------------- params ---------------- */
+  var qs = new URLSearchParams(location.search);
+  var P = {
+    type: qs.get('type') || 'movie',
+    tmdb: qs.get('tmdb') || '',
+    season: qs.get('season') || '',
+    episode: qs.get('episode') || '',
+    title: qs.get('title') || '',
+    startAt: parseInt(qs.get('startAt') || '0', 10) || 0,
+    apiOverride: qs.get('api') || '',
+    next: qs.get('next') || ''
+  };
+
+  var video = document.getElementById('video');
+  var el = function (id) { return document.getElementById(id); };
+  var ui = {
+    top: el('top'), hud: el('hud'), center: el('center'), spinner: el('spinner'),
+    bigIcon: el('bigIcon'), centerMsg: el('centerMsg'), menu: el('menu'), menuItems: el('menuItems'),
+    menuTitle: el('menuTitle'), overlay: el('overlay'), overlayTitle: el('overlayTitle'),
+    overlayMsg: el('overlayMsg'), overlayHint: el('overlayHint'), title: el('title'), crumb: el('crumb'),
+    barFill: el('barFill'), barDot: el('barDot'), tCur: el('tCur'), tDur: el('tDur')
+  };
+
+  /* ---------------- state ---------------- */
+  var resolved = null;          // /stream response
+  var sourceIdx = 0;
+  var hls = null;
+  var posKey = 'vergeNative.pos.' + P.type + '.' + P.tmdb + (P.type === 'tv' ? '.' + P.season + '.' + P.episode : '');
+  var resumeT = P.startAt || 0;
+  var startApplied = false;
+  var reloadedOnce = false;
+  var saveTimer = 0;
+  var hudTimer = 0;
+  var menuOpen = false;
+  var menuFocus = 0;
+  var ended = false;
+  var failed = false;
+
+  /* ---------------- helpers ---------------- */
+  function fmt(s) {
+    s = Math.max(0, Math.floor(s || 0));
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+    return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (ss < 10 ? '0' : '') + ss;
+  }
+  function showHud() {
+    ui.top.classList.remove('hidden'); ui.hud.classList.remove('hidden');
+    clearTimeout(hudTimer);
+    hudTimer = setTimeout(function () {
+      if (!menuOpen && !video.paused) { ui.top.classList.add('hidden'); ui.hud.classList.add('hidden'); }
+    }, 4000);
+  }
+  function spinner(on, msg) {
+    ui.spinner.classList.toggle('hidden', !on);
+    ui.centerMsg.textContent = msg || '';
+    ui.center.classList.toggle('hidden', !on && !ui.centerMsg.textContent && ui.bigIcon.classList.contains('hidden'));
+  }
+  function bigPause(on) {
+    ui.bigIcon.classList.toggle('hidden', !on);
+    ui.center.classList.toggle('hidden', !on && ui.spinner.classList.contains('hidden'));
+  }
+  function overlay(title, msg, hint) {
+    ui.overlayTitle.textContent = title || '';
+    ui.overlayMsg.textContent = msg || '';
+    ui.overlayHint.innerHTML = hint || '';
+    ui.overlay.classList.remove('hidden');
+  }
+  function savePos() {
+    try {
+      if (!video.duration || ended) return;
+      localStorage.setItem(posKey, JSON.stringify({ t: Math.floor(video.currentTime), d: Math.floor(video.duration), ts: Date.now() }));
+    } catch (e) {}
+  }
+  function readPos() {
+    try {
+      var v = JSON.parse(localStorage.getItem(posKey) || 'null');
+      if (v && v.t > 30 && (!v.d || v.t < v.d * 0.95)) return v.t;
+    } catch (e) {}
+    return 0;
+  }
+  function clearPos() { try { localStorage.removeItem(posKey); } catch (e) {} }
+
+  /* ---------------- resolve ---------------- */
+  function resolveStream(cb) {
+    spinner(true, 'Finding stream…');
+    var done = function (err, data) { cb(err, data); };
+    var finish = function (api) {
+      var url = api.replace(/\/+$/, '') + '/stream?type=' + encodeURIComponent(P.type) +
+        '&tmdb=' + encodeURIComponent(P.tmdb) +
+        (P.type === 'tv' ? '&season=' + encodeURIComponent(P.season) + '&episode=' + encodeURIComponent(P.episode) : '');
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.timeout = 20000;
+      xhr.onload = function () {
+        if (xhr.status === 200) {
+          try { done(null, JSON.parse(xhr.responseText)); } catch (e) { done('bad_response'); }
+        } else if (xhr.status === 404) { done('not_found'); }
+        else { done('http_' + xhr.status); }
+      };
+      xhr.onerror = xhr.ontimeout = function () { done('network'); };
+      xhr.send();
+    };
+    if (P.apiOverride) return finish(P.apiOverride);
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', 'data/runtime.json?t=' + Date.now(), true);
+    xhr.onload = function () {
+      try {
+        var rt = JSON.parse(xhr.responseText);
+        if (rt && rt.trailerApi) return finish(rt.trailerApi);
+      } catch (e) {}
+      done('no_api');
+    };
+    xhr.onerror = function () { done('no_api'); };
+    xhr.send();
+  }
+
+  /* ---------------- playback ---------------- */
+  function destroyHls() { if (hls) { try { hls.destroy(); } catch (e) {} hls = null; } }
+
+  function attachSource(idx) {
+    destroyHls();
+    var src = resolved.sources[idx];
+    if (!src) return failAll();
+    spinner(true, 'Loading ' + (src.name === 'primary' ? '' : src.name + ' · ') + 'stream…');
+    startApplied = false;
+    var start = resumeT || 0;
+
+    if (window.Hls && window.Hls.isSupported() && src.type !== 'mp4') {
+      hls = new Hls({ startPosition: start > 0 ? start : -1, maxBufferLength: 30, capLevelToPlayerSize: true });
+      hls.on(Hls.Events.ERROR, function (_, data) {
+        if (!data || !data.fatal) return;
+        console.warn('[native] fatal hls error:', data.type, data.details);
+        nextSource();
+      });
+      hls.loadSource(src.url);
+      hls.attachMedia(video);
+    } else {
+      video.src = src.url;
+    }
+    video.load();
+  }
+
+  function nextSource() {
+    resumeT = video.currentTime || resumeT; // resume where we died
+    savePos();
+    sourceIdx++;
+    if (resolved && sourceIdx < resolved.sources.length) {
+      ui.crumb.textContent = 'Source ' + (sourceIdx + 1) + ' of ' + resolved.sources.length + ' — switching…';
+      attachSource(sourceIdx);
+    } else if (!reloadedOnce) {
+      // All sources died — vidrock URLs expire; get fresh ones once.
+      reloadedOnce = true;
+      ui.crumb.textContent = 'Refreshing stream…';
+      boot(true);
+    } else {
+      failAll();
+    }
+  }
+
+  function failAll() {
+    failed = true;
+    spinner(false);
+    overlay('This title won’t play right now', 'Every source failed. It may be missing or temporarily unavailable.', 'Press <b>BACK</b> to return');
+  }
+
+  function applyResume() {
+    if (startApplied) return;
+    startApplied = true;
+    var t = resumeT || readPos();
+    if (t > 0 && video.duration && t < video.duration - 10) video.currentTime = t;
+  }
+
+  /* ---------------- subtitles ---------------- */
+  function loadTracks() {
+    // wipe any previous tracks
+    while (video.firstChild) video.removeChild(video.firstChild);
+    var tracks = (resolved && resolved.tracks) || [];
+    for (var i = 0; i < tracks.length; i++) {
+      var tr = document.createElement('track');
+      tr.kind = 'subtitles';
+      tr.label = tracks[i].label || ('Track ' + (i + 1));
+      if (tracks[i].language) tr.srclang = tracks[i].language;
+      tr.src = tracks[i].src;
+      video.appendChild(tr);
+    }
+    setTrack(-1);
+  }
+  function setTrack(idx) {
+    for (var i = 0; i < video.textTracks.length; i++) {
+      video.textTracks[i].mode = (i === idx) ? 'showing' : 'disabled';
+    }
+    video._subIdx = idx;
+  }
+
+  /* ---------------- menu ---------------- */
+  function openMenu() {
+    var tracks = video.textTracks;
+    if (!tracks || !tracks.length) { ui.centerMsg.textContent = 'No subtitles for this title'; setTimeout(function () { if (!menuOpen) ui.centerMsg.textContent = ''; }, 1800); return; }
+    menuOpen = true; menuFocus = (video._subIdx == null ? -1 : video._subIdx) + 1;
+    paintMenu();
+    ui.menu.classList.remove('hidden');
+    showHud();
+  }
+  function closeMenu() { menuOpen = false; ui.menu.classList.add('hidden'); showHud(); }
+  function paintMenu() {
+    var html = '';
+    var items = ['Off'];
+    for (var i = 0; i < video.textTracks.length; i++) items.push(video.textTracks[i].label || ('Track ' + (i + 1)));
+    for (var j = 0; j < items.length; j++) {
+      var sel = (j - 1) === video._subIdx;
+      html += '<div class="mi' + (j === menuFocus ? ' focus' : '') + '"><span class="check">' + (sel ? '✓' : '') + '</span>' + items[j] + '</div>';
+    }
+    ui.menuItems.innerHTML = html;
+  }
+  function menuKey(k) {
+    var n = video.textTracks.length + 1;
+    if (k === 38) menuFocus = (menuFocus - 1 + n) % n;        // up
+    else if (k === 40) menuFocus = (menuFocus + 1) % n;       // down
+    else if (k === 13) { setTrack(menuFocus - 1); closeMenu(); return true; } // ok
+    else { closeMenu(); return true; }                        // any other key closes
+    paintMenu();
+    return true;
+  }
+
+  /* ---------------- keys ---------------- */
+  var BACK_KEYS = { 8: 1, 27: 1, 461: 1, 10009: 1, 10071: 1 }; // backspace, esc, VIDAA/Tizen back
+  document.addEventListener('keydown', function (e) {
+    var k = e.keyCode;
+    if (failed || ended) {
+      if (BACK_KEYS[k]) exit();
+      else if (ended && P.next && k === 13) goNext();
+      e.preventDefault();
+      return;
+    }
+    if (menuOpen) { if (menuKey(k)) e.preventDefault(); return; }
+
+    var handled = true;
+    if (BACK_KEYS[k]) exit();
+    else if (k === 13 || k === 415) togglePlay();              // OK / play
+    else if (k === 19) video.pause();                          // pause
+    else if (k === 37) seekBy(-10);                            // left
+    else if (k === 39) seekBy(10);                             // right
+    else if (k === 418) seekBy(-30);                           // RW
+    else if (k === 417) seekBy(30);                            // FF
+    else if (k === 38) openMenu();                             // up
+    else handled = false;
+    if (handled) { showHud(); e.preventDefault(); }
+  });
+
+  function togglePlay() { if (video.paused) video.play().catch(function () {}); else video.pause(); }
+  function seekBy(d) {
+    if (!video.duration) return;
+    video.currentTime = Math.max(0, Math.min(video.duration - 0.5, video.currentTime + d));
+  }
+  function exit() { savePos(); history.back(); }
+  function goNext() {
+    // next = "type:tmdb:season:episode:title"
+    var p = P.next.split(':');
+    var t = p[0] === 'tv' ? 'tv' : 'movie';
+    var url = 'native.html?type=' + t + '&tmdb=' + encodeURIComponent(p[1] || '') +
+      (t === 'tv' ? '&season=' + encodeURIComponent(p[2] || '1') + '&episode=' + encodeURIComponent(p[3] || '1') : '') +
+      '&title=' + encodeURIComponent(p.slice(4).join(':') || '');
+    if (P.apiOverride) url += '&api=' + encodeURIComponent(P.apiOverride);
+    location.replace(url);
+  }
+
+  /* ---------------- video events ---------------- */
+  video.addEventListener('loadedmetadata', function () { applyResume(); ui.tDur.textContent = fmt(video.duration); });
+  video.addEventListener('playing', function () { spinner(false); bigPause(false); failed = false; showHud(); });
+  video.addEventListener('waiting', function () { if (!failed) spinner(true, ''); });
+  video.addEventListener('pause', function () { bigPause(true); savePos(); showHud(); });
+  video.addEventListener('play', function () { bigPause(false); });
+  video.addEventListener('timeupdate', function () {
+    var d = video.duration || 0, c = video.currentTime || 0;
+    if (d) {
+      var pct = (c / d) * 100;
+      ui.barFill.style.width = pct + '%';
+      ui.barDot.style.left = pct + '%';
+    }
+    ui.tCur.textContent = fmt(c); ui.tDur.textContent = fmt(d);
+  });
+  video.addEventListener('error', function () {
+    if (!video.error) return;
+    console.warn('[native] media error', video.error.code);
+    nextSource();
+  });
+  video.addEventListener('ended', function () {
+    ended = true;
+    clearPos();
+    spinner(false); bigPause(false);
+    var hint = 'Press <b>BACK</b> to exit';
+    if (P.next) hint = '<b>OK</b> play next episode &nbsp;·&nbsp; <b>BACK</b> exit';
+    overlay('Finished', P.title, hint);
+  });
+  window.addEventListener('pagehide', savePos);
+  saveTimer = setInterval(function () { if (!video.paused && !ended) savePos(); }, 5000);
+
+  /* ---------------- boot ---------------- */
+  function boot(isRetry) {
+    resolveStream(function (err, data) {
+      if (err || !data || !data.sources || !data.sources.length) {
+        spinner(false);
+        if (err === 'not_found') overlay('Not available yet', 'No source has this title right now. Try the regular player.', 'Press <b>BACK</b> to return');
+        else overlay('Couldn’t reach the stream service', String(err || 'unknown'), 'Press <b>BACK</b> to return');
+        failed = true;
+        return;
+      }
+      resolved = data;
+      if (!isRetry) { sourceIdx = 0; } else { sourceIdx = Math.min(sourceIdx, data.sources.length - 1); }
+      var crumb = P.type === 'tv' ? 'S' + P.season + ' · E' + P.episode + ' — ' : '';
+      crumb += data.provider === 'vidrock' ? 'backup source' : 'primary source';
+      ui.title.textContent = P.title || (P.type === 'tv' ? 'Episode' : 'Movie');
+      ui.crumb.textContent = crumb;
+      loadTracks();
+      attachSource(sourceIdx);
+      showHud();
+      video.play().catch(function () { /* autoplay blocked -> user presses OK */ });
+    });
+  }
+
+  if (!P.tmdb) { overlay('Missing title id', 'native.html needs ?type=&tmdb=', ''); failed = true; }
+  else boot(false);
+})();
+</script>
+</body>
+</html>

@@ -484,3 +484,201 @@ test('resolves and proxies an HLS stream without exposing the upstream URL', asy
   assert.equal(segment.status, 200);
   assert.deepEqual(Array.from(new Uint8Array(await segment.arrayBuffer())), [1, 2, 3]);
 });
+
+/* ---------- /stream (native player resolution) ---------- */
+
+const STREAM_ENV = {
+  ACCESS_PATH: 'private_test_path_1234',
+  APP_ORIGIN: 'https://chigala.github.io',
+  PLAYBACK_TOKEN_SECRET: 'synthetic-secret-that-is-longer-than-thirty-two-characters',
+  TRAILER_URL_TEMPLATE: 'https://player.example.invalid/{type}/{tmdb}',
+};
+const VIDROCK_TEST_KEY_HEX = '7f3e9c2a8b5d1f4e6a9c3b7d2e5f8a1c4b6d9e2f5a8c1b4d7e9f2a5c8b1d4e7f';
+
+async function encryptVidrockUrl(plainUrl) {
+  const keyBytes = new Uint8Array(VIDROCK_TEST_KEY_HEX.length / 2);
+  for (let i = 0; i < keyBytes.length; i++) keyBytes[i] = parseInt(VIDROCK_TEST_KEY_HEX.substr(i * 2, 2), 16);
+  const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-GCM' }, false, ['encrypt']);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(plainUrl)));
+  const blob = new Uint8Array(iv.length + cipher.length);
+  blob.set(iv);
+  blob.set(cipher, iv.length);
+  let binary = '';
+  for (const byte of blob) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+test('stream endpoint validates parameters', async () => {
+  const headers = { Origin: STREAM_ENV.APP_ORIGIN };
+  const badType = await handleRequest(new Request(
+    'https://worker.example.invalid/' + STREAM_ENV.ACCESS_PATH + '/stream?type=anime&tmdb=550',
+    { headers },
+  ), STREAM_ENV);
+  assert.equal(badType.status, 400);
+
+  const badId = await handleRequest(new Request(
+    'https://worker.example.invalid/' + STREAM_ENV.ACCESS_PATH + '/stream?type=movie&tmdb=abc',
+    { headers },
+  ), STREAM_ENV);
+  assert.equal(badId.status, 400);
+
+  const tvNoEpisode = await handleRequest(new Request(
+    'https://worker.example.invalid/' + STREAM_ENV.ACCESS_PATH + '/stream?type=tv&tmdb=66732',
+    { headers },
+  ), STREAM_ENV);
+  assert.equal(tvNoEpisode.status, 400);
+});
+
+test('stream resolves via moviesapi and proxies with its referer', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const calls = [];
+
+  globalThis.fetch = async (input, init = {}) => {
+    const url = String(input);
+    const headers = new Headers(init.headers || {});
+    calls.push({ url, referer: headers.get('referer') || '', playerKey: headers.get('x-player-key') || '' });
+
+    if (url === 'https://moviesapi.to/api/vidora/v1/movie/550') {
+      assert.ok(headers.get('x-player-key'));
+      assert.equal(headers.get('referer'), 'https://moviesapi.to/movie/550');
+      return new Response(JSON.stringify({
+        result: true, title: 'Fight Club', year: 1999,
+        sources: [{ url: 'https://cdn.upstream.invalid/hls/master.m3u8', tracks: [{ file: '/api/vidora/subs/en.vtt', label: 'English', language: 'en' }] }],
+      }), { headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url === 'https://cdn.upstream.invalid/hls/master.m3u8') {
+      assert.equal(headers.get('referer'), 'https://moviesapi.to/');
+      return new Response('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nvariant.m3u8', {
+        headers: { 'Content-Type': 'application/vnd.apple.mpegurl' },
+      });
+    }
+    if (url === 'https://cdn.upstream.invalid/hls/variant.m3u8') {
+      assert.equal(headers.get('referer'), 'https://moviesapi.to/');
+      return new Response('#EXTM3U\n#EXTINF:4,\nseg-1.ts', { headers: { 'Content-Type': 'application/vnd.apple.mpegurl' } });
+    }
+    if (url === 'https://cdn.upstream.invalid/hls/seg-1.ts') {
+      return new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'video/mp2t' } });
+    }
+    throw new Error('unexpected synthetic URL: ' + url);
+  };
+
+  const headers = { Origin: STREAM_ENV.APP_ORIGIN };
+  const resolved = await handleRequest(new Request(
+    'https://worker.example.invalid/' + STREAM_ENV.ACCESS_PATH + '/stream?type=movie&tmdb=550',
+    { headers },
+  ), STREAM_ENV);
+  assert.equal(resolved.status, 200);
+  const data = await resolved.json();
+  assert.equal(data.provider, 'moviesapi');
+  assert.equal(data.sources.length, 1);
+  assert.match(data.sources[0].url, /\/media\//);
+  assert.doesNotMatch(data.sources[0].url, /cdn\.upstream\.invalid/);
+  assert.equal(data.tracks.length, 1);
+  assert.equal(data.tracks[0].label, 'English');
+
+  const manifest = await handleRequest(new Request(data.sources[0].url, { headers }), STREAM_ENV);
+  const manifestText = await manifest.text();
+  assert.equal(manifest.status, 200);
+  assert.match(manifestText, /worker\.example\.invalid/);
+  assert.doesNotMatch(manifestText, /cdn\.upstream\.invalid/);
+
+  const variantUrl = manifestText.split('\n').find((line) => line && line[0] !== '#');
+  const variant = await handleRequest(new Request(variantUrl, { headers }), STREAM_ENV);
+  const variantText = await variant.text();
+  const segmentUrl = variantText.split('\n').find((line) => line && line[0] !== '#');
+  const segment = await handleRequest(new Request(segmentUrl, { headers }), STREAM_ENV);
+  assert.deepEqual(Array.from(new Uint8Array(await segment.arrayBuffer())), [1, 2, 3]);
+});
+
+test('stream falls back to vidrock, decrypts sources, proxies with origin+referer', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const vidrockUrl = await encryptVidrockUrl('https://cdn.backup.invalid/movie/master.m3u8');
+  const deadUrl = await encryptVidrockUrl('https://cdn.backup.invalid/movie/dead.m3u8');
+
+  globalThis.fetch = async (input, init = {}) => {
+    const url = String(input);
+    const headers = new Headers(init.headers || {});
+
+    if (url === 'https://moviesapi.to/api/vidora/v1/movie/9806') {
+      return new Response(JSON.stringify({ result: false, message: 'Movie not yet encoded' }), { status: 404 });
+    }
+    if (url === 'https://vidrock.net/api/movie/9806') {
+      return new Response(JSON.stringify({
+        Nova: { url: deadUrl, type: 'hls' },
+        Orion: { url: vidrockUrl, type: 'hls' },
+        Empty: { url: null, type: null },
+      }), { headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url === 'https://moviesapi.to/api/vidora/v1/subtitles/movie/9806') {
+      return new Response(JSON.stringify({ tracks: [{ src: 'subs/en.vtt?v=1', label: 'English', language: 'en' }] }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (url === 'https://cdn.backup.invalid/movie/dead.m3u8') {
+      return new Response('gone', { status: 404 });
+    }
+    if (url === 'https://cdn.backup.invalid/movie/master.m3u8') {
+      assert.equal(headers.get('referer'), 'https://vidrock.net/');
+      assert.equal(headers.get('origin'), 'https://vidrock.net');
+      return new Response('#EXTM3U\n#EXTINF:4,\nseg-1.ts', { headers: { 'Content-Type': 'application/vnd.apple.mpegurl' } });
+    }
+    if (url === 'https://cdn.backup.invalid/movie/seg-1.ts') {
+      return new Response(new Uint8Array([9, 9]), { headers: { 'Content-Type': 'video/mp2t' } });
+    }
+    throw new Error('unexpected synthetic URL: ' + url);
+  };
+
+  const headers = { Origin: STREAM_ENV.APP_ORIGIN };
+  const resolved = await handleRequest(new Request(
+    'https://worker.example.invalid/' + STREAM_ENV.ACCESS_PATH + '/stream?type=movie&tmdb=9806',
+    { headers },
+  ), STREAM_ENV);
+  assert.equal(resolved.status, 200);
+  const data = await resolved.json();
+  assert.equal(data.provider, 'vidrock');
+  assert.equal(data.sources.length, 2);
+  assert.equal(data.sources[0].name, 'Nova');
+  assert.equal(data.sources[1].name, 'Orion');
+  // subtitle index works even though moviesapi has no encoded stream
+  assert.equal(data.tracks.length, 1);
+
+  // first (dead) source 404s through the proxy...
+  const dead = await handleRequest(new Request(data.sources[0].url, { headers }), STREAM_ENV);
+  assert.equal(dead.status, 502);
+
+  // ...the player fails over to the second, which plays
+  const manifest = await handleRequest(new Request(data.sources[1].url, { headers }), STREAM_ENV);
+  assert.equal(manifest.status, 200);
+  const manifestText = await manifest.text();
+  assert.match(manifestText, /worker\.example\.invalid/);
+  const segmentUrl = manifestText.split('\n').find((line) => line && line[0] !== '#');
+  const segment = await handleRequest(new Request(segmentUrl, { headers }), STREAM_ENV);
+  assert.deepEqual(Array.from(new Uint8Array(await segment.arrayBuffer())), [9, 9]);
+});
+
+test('stream returns 404 when no provider has the title', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.startsWith('https://moviesapi.to/')) {
+      return new Response(JSON.stringify({ result: false, message: 'Movie not yet encoded' }), { status: 404 });
+    }
+    if (url.startsWith('https://vidrock.net/')) {
+      return new Response(JSON.stringify({ Nova: { url: null } }), { headers: { 'Content-Type': 'application/json' } });
+    }
+    throw new Error('unexpected synthetic URL: ' + url);
+  };
+
+  const headers = { Origin: STREAM_ENV.APP_ORIGIN };
+  const resolved = await handleRequest(new Request(
+    'https://worker.example.invalid/' + STREAM_ENV.ACCESS_PATH + '/stream?type=movie&tmdb=1',
+    { headers },
+  ), STREAM_ENV);
+  assert.equal(resolved.status, 404);
+  assert.equal((await resolved.json()).error, 'STREAM_NOT_FOUND');
+});
