@@ -14,6 +14,7 @@ const MOVIESAPI_ORIGIN = 'https://moviesapi.to';
 const MOVIESAPI_PLAYER_KEY = '3a67e8866ae1d2bb9e81fe7f73315a56eb3bdf5e3e755c7554c8be6910aa6b13';
 const VIDROCK_ORIGIN = 'https://vidrock.net';
 const VIDROCK_KEY_HEX = '7f3e9c2a8b5d1f4e6a9c3b7d2e5f8a1c4b6d9e2f5a8c1b4d7e9f2a5c8b1d4e7f';
+const VIDSRCBUZZ_ORIGIN = 'https://vidsrc.buzz';
 
 export default {
   async fetch(request, env) {
@@ -153,7 +154,8 @@ function disclosePlayerUrl(request, env, cors) {
 /*
  * /stream — native-player stream resolution.
  *
- * Chain: moviesapi.to (primary) -> vidrock.net (backup). Both return direct
+ * Chain: moviesapi.to (primary) -> vidsrc.buzz (backup) -> vidrock.net
+ * (datacenter-decoyed, kept for completeness). All return direct
  * HLS URLs, but those CDNs demand Referer/Origin headers that a TV webview
  * cannot set on <video> requests, so every URL is sealed into the existing
  * /media/ proxy, which injects the stored headers and rewrites playlists.
@@ -216,6 +218,36 @@ async function streamNative(request, env, rootPath, cors) {
     }
     note('moviesapi', 'no encoded stream');
   } catch (error) { note('moviesapi', error); }
+
+  // vidsrc.buzz: resolver works, but their api.php 403s datacenter IPs and
+  // sends no CORS headers, so neither the worker nor a cross-origin TV page
+  // can complete the flow today. Kept behind a flag in case that changes.
+  if (String(env.VIDSRCBUZZ_ENABLED || '') === '1') try {
+    const buzz = await resolveVidsrcBuzzStreams(type, tmdb, season, episode, env, note);
+    if (buzz && buzz.sources.length) {
+      const refererHeaders = { Referer: buzz.referer };
+      const sources = [];
+      for (const source of buzz.sources.slice(0, 4)) {
+        const sealed = {
+          name: source.name,
+          type: source.type,
+          url: await sealMedia(source.url, refererHeaders, source.type === 'mp4' ? 'video.mp4' : 'master.m3u8'),
+        };
+        if (debug) sealed.raw = source.url;
+        sources.push(sealed);
+      }
+      const tracks = [];
+      for (const track of buzz.tracks.slice(0, 24)) {
+        tracks.push({
+          label: track.label,
+          language: track.language,
+          src: await sealMedia(track.src, refererHeaders, 'subtitle-' + (tracks.length + 1) + '.vtt'),
+        });
+      }
+      return json({ provider: 'vidsrcbuzz', sources, tracks, expiresAt: expires }, 200, cors);
+    }
+    note('vidsrcbuzz', 'no playable sources');
+  } catch (error) { note('vidsrcbuzz', error); }
 
   try {
     const vidrockSources = await resolveVidrockStreams(type, tmdb, season, episode, env, note);
@@ -446,6 +478,84 @@ async function vidrockSourcesFromBody(body, env, note) {
     }
   }
   return sources;
+}
+
+/*
+ * vidsrc.buzz family (videm.xyz runs the same codebase). The embed page
+ * embeds a signed config (var Q = {...}) carrying the imdb id and a token;
+ * /pl/api.php then lists servers (a=sources), mints playable URLs
+ * (a=play -> /_stream?id=...) and serves WebVTT subtitles (a=sub&ref=...).
+ * Media is proxied by vidsrc itself, so downstream requests need nothing
+ * beyond a Referer back to the embed page.
+ */
+async function resolveVidsrcBuzzStreams(type, tmdb, season, episode, env, note) {
+  const embedUrl = VIDSRCBUZZ_ORIGIN + (type === 'tv' ? '/embed/tv/' + tmdb + '/' + season + '/' + episode : '/embed/movie/' + tmdb);
+  const timeout = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(UPSTREAM_FETCH_MAX_MS) : undefined;
+  const page = await fetch(embedUrl, { headers: { 'User-Agent': STREAM_API_AGENT }, signal: timeout });
+  if (!page.ok) throw codedError('VIDSRCBUZZ_HTTP_' + page.status, 502);
+  const html = await page.text();
+  const match = /var Q = (\{[\s\S]*?\});\s*\n/.exec(html);
+  if (!match) { if (note) note('vidsrcbuzz', 'no embedded config'); return null; }
+  let config = null;
+  try { config = JSON.parse(match[1]); } catch (_) { /* fall through */ }
+  if (!config || !config.t || !config.id) { if (note) note('vidsrcbuzz', 'config missing token'); return null; }
+
+  const token = String(config.t);
+  const qs = 'type=' + encodeURIComponent(String(config.type || type)) +
+    '&id=' + encodeURIComponent(String(config.id)) +
+    '&s=' + encodeURIComponent(String(config.s == null ? 0 : config.s)) +
+    '&e=' + encodeURIComponent(String(config.e == null ? 0 : config.e)) +
+    '&t=' + encodeURIComponent(token);
+  const apiFetch = async (query) => {
+    const response = await fetch(VIDSRCBUZZ_ORIGIN + '/pl/api.php?' + query, {
+      headers: { 'User-Agent': STREAM_API_AGENT, Referer: embedUrl },
+      signal: timeout,
+    });
+    if (!response.ok) throw codedError('VIDSRCBUZZ_API_' + response.status, 502);
+    return response.json().catch(() => null);
+  };
+
+  let servers = [];
+  const sourcesBody = await apiFetch('a=sources&' + qs);
+  if (sourcesBody && Array.isArray(sourcesBody.servers)) servers = sourcesBody.servers;
+  if (!servers.length && config.ssr && Array.isArray(config.ssr.servers)) servers = config.ssr.servers;
+
+  const sources = [];
+  for (const server of servers.slice(0, 6)) {
+    if (!server || !server.ref) continue;
+    try {
+      const play = await apiFetch('a=play&ref=' + encodeURIComponent(String(server.ref)) + '&t=' + encodeURIComponent(token));
+      const rel = play && typeof play.url === 'string' ? play.url : '';
+      if (!rel) continue;
+      const url = new URL(rel, VIDSRCBUZZ_ORIGIN + '/pl/').toString();
+      if (!/^https?:\/\//i.test(url) || sources.some((existing) => existing.url === url)) continue;
+      sources.push({
+        name: String(server.name || 'server').slice(0, 40),
+        type: play && play.type === 'mp4' ? 'mp4' : 'hls',
+        url: url,
+      });
+    } catch (error) {
+      if (note) note('vidsrcbuzz play ' + (server.name || '?'), error);
+    }
+    if (sources.length >= 4) break;
+  }
+
+  const tracks = [];
+  try {
+    const subsBody = await apiFetch('a=subs&' + qs);
+    const subs = subsBody && Array.isArray(subsBody.subs) ? subsBody.subs : [];
+    for (const sub of subs.slice(0, 24)) {
+      if (!sub || !sub.ref) continue;
+      tracks.push({
+        label: String(sub.label || sub.lang || 'Subtitle').slice(0, 40),
+        language: String(sub.cc || sub.lang || '').slice(0, 12),
+        src: VIDSRCBUZZ_ORIGIN + '/pl/api.php?a=sub&ref=' + encodeURIComponent(String(sub.ref)),
+      });
+    }
+  } catch (_) { /* subtitles are best-effort */ }
+
+  return { sources, tracks, referer: embedUrl };
 }
 
 async function resolveTrailer(request, env, rootPath, cors) {
