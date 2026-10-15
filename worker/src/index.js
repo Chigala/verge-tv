@@ -161,6 +161,11 @@ async function streamNative(request, env, rootPath, cors) {
   const tmdb = url.searchParams.get('tmdb') || '';
   const season = url.searchParams.get('season') || '';
   const episode = url.searchParams.get('episode') || '';
+  const debug = url.searchParams.get('debug') === '1';
+  const debugNotes = [];
+  const note = (where, error) => {
+    debugNotes.push(where + ': ' + String((error && (error.message || error.code)) || error).slice(0, 160));
+  };
 
   if (type !== 'movie' && type !== 'tv') return safeError('INVALID_MEDIA_TYPE', 400, cors);
   if (!/^\d{1,12}$/.test(tmdb)) return safeError('INVALID_TMDB_ID', 400, cors);
@@ -202,19 +207,22 @@ async function streamNative(request, env, rootPath, cors) {
       }
       return json({ provider: 'moviesapi', sources, tracks, expiresAt: expires }, 200, cors);
     }
-  } catch (_) { /* primary unavailable -> try the backup */ }
+    note('moviesapi', 'no encoded stream');
+  } catch (error) { note('moviesapi', error); }
 
   try {
-    const vidrockSources = await resolveVidrockStreams(type, tmdb, season, episode, env);
+    const vidrockSources = await resolveVidrockStreams(type, tmdb, season, episode, env, note);
     if (vidrockSources.length) {
       const mediaHeaders = { Referer: VIDROCK_ORIGIN + '/', Origin: VIDROCK_ORIGIN };
       const sources = [];
       for (const source of vidrockSources.slice(0, 6)) {
-        sources.push({
+        const sealed = {
           name: source.name,
           type: source.type,
           url: await sealMedia(source.url, mediaHeaders, source.type === 'mp4' ? 'video.mp4' : 'master.m3u8'),
-        });
+        };
+        if (debug) sealed.raw = source.url;
+        sources.push(sealed);
       }
       // Subtitles come from moviesapi's community subtitle index, which is
       // keyed by TMDB id and works even when the movie itself is unencoded.
@@ -232,8 +240,12 @@ async function streamNative(request, env, rootPath, cors) {
       } catch (_) { /* subtitles are best-effort */ }
       return json({ provider: 'vidrock', sources, tracks, expiresAt: expires }, 200, cors);
     }
-  } catch (_) { /* backup unavailable */ }
+    note('vidrock', 'no decryptable sources');
+  } catch (error) { note('vidrock', error); }
 
+  if (debug && debugNotes.length) {
+    return json({ error: 'STREAM_NOT_FOUND', debug: debugNotes }, 404, cors);
+  }
   return safeError('STREAM_NOT_FOUND', 404, cors);
 }
 
@@ -312,23 +324,32 @@ async function vidrockDecryptUrl(blob, key) {
   return new TextDecoder().decode(plain);
 }
 
-async function resolveVidrockStreams(type, tmdb, season, episode, env) {
+async function resolveVidrockStreams(type, tmdb, season, episode, env, note) {
   const path = type === 'tv' ? 'tv/' + tmdb + '/' + season + '/' + episode : 'movie/' + tmdb;
   const response = await fetch(VIDROCK_ORIGIN + '/api/' + path, { headers: { 'User-Agent': STREAM_API_AGENT } });
+  if (!response.ok) throw codedError('VIDROCK_HTTP_' + response.status, 502);
   const body = await response.json().catch(() => null);
-  if (!response.ok || !body || typeof body !== 'object' || Array.isArray(body)) return [];
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    if (note) note('vidrock shape', 'unexpected response shape');
+    return [];
+  }
+  if (note) note('vidrock raw', JSON.stringify(body).slice(0, 300));
   const key = await vidrockDecryptKey(env);
   const sources = [];
   for (const name of Object.keys(body)) {
     const entry = body[name];
     if (!entry || typeof entry !== 'object' || !entry.url) continue;
     try {
+      // Browser clients get AES-GCM blobs; datacenter clients get plaintext URLs.
+      const url = /^https?:\/\//i.test(String(entry.url)) ? String(entry.url) : await vidrockDecryptUrl(entry.url, key);
       sources.push({
         name: String(name).slice(0, 40),
         type: entry.type === 'mp4' ? 'mp4' : 'hls',
-        url: await vidrockDecryptUrl(entry.url, key),
+        url: url,
       });
-    } catch (_) { /* skip undecryptable sources */ }
+    } catch (error) {
+      if (note) note('vidrock decrypt ' + name + ' (len=' + String(entry.url).length + ', head=' + String(entry.url).slice(0, 24) + ')', error);
+    }
   }
   return sources;
 }
