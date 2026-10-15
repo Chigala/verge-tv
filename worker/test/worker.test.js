@@ -759,7 +759,8 @@ test('seal decrypts client-fetched blobs and seals them for the media proxy', as
   assert.equal(resolved.status, 200);
   const data = await resolved.json();
   assert.equal(data.provider, 'vidrock-client');
-  assert.equal(data.sources.length, 2);
+  // the plaintext decoy entry is dropped; only the real blob survives
+  assert.equal(data.sources.length, 1);
   assert.equal(data.sources[0].name, 'Orion');
   assert.match(data.sources[0].url, /\/media\//);
   assert.doesNotMatch(data.sources[0].url, /cdn\.clientfetch\.invalid/);
@@ -784,4 +785,39 @@ test('seal refuses to proxy private hosts smuggled in a blob', async () => {
   // the URL decrypts fine but fails the upstream safety check, and no other
   // source exists, so the endpoint surfaces a failure rather than sealing it
   assert.ok(resolved.status === 404 || resolved.status >= 500);
+});
+
+test('stream drops plaintext vidrock decoy URLs served to datacenter IPs', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.startsWith('https://moviesapi.to/')) {
+      return new Response(JSON.stringify({ result: false, message: 'Movie not yet encoded' }), { status: 404 });
+    }
+    if (url.startsWith('https://vidrock.net/')) {
+      // the datacenter decoy: same plaintext playlist for every "source"
+      return new Response(JSON.stringify({
+        source1: { url: 'https://vz-decoy.b-cdn.net/73baff63/playlist.m3u8', type: 'hls' },
+        source2: { url: 'https://vz-decoy.b-cdn.net/73baff63/playlist.m3u8', type: 'hls' },
+      }), { headers: { 'Content-Type': 'application/json' } });
+    }
+    throw new Error('unexpected synthetic URL: ' + url);
+  };
+
+  const resolved = await handleRequest(new Request(
+    'https://worker.example.invalid/' + STREAM_ENV.ACCESS_PATH + '/stream?type=movie&tmdb=19995',
+    { headers: { Origin: STREAM_ENV.APP_ORIGIN } },
+  ), STREAM_ENV);
+  assert.equal(resolved.status, 404);
+  assert.equal((await resolved.json()).error, 'STREAM_NOT_FOUND');
+});
+
+test('seal drops plaintext decoy URLs from client-fetched bodies too', async () => {
+  const resolved = await handleRequest(sealRequest({
+    type: 'movie', tmdb: '19995',
+    vidrock: { source1: { url: 'https://vz-decoy.b-cdn.net/73baff63/playlist.m3u8', type: 'hls' } },
+  }), STREAM_ENV);
+  assert.equal(resolved.status, 404);
+  assert.equal((await resolved.json()).error, 'STREAM_NOT_FOUND');
 });

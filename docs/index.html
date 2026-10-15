@@ -1353,6 +1353,7 @@
     if (isEp) url += '&season=' + season + '&episode=' + episode;
     var pos = readProgress(pid);
     if (pos >= 30) url += '&startAt=' + Math.floor(pos);
+    if (d.rt) url += '&rt=' + Math.floor(d.rt);   // native.html skips decoy sources shorter than half the expected runtime
     if (isEp && epi && epi.season && epi.season.n === season && epi.i + 1 < epi.season.eps.length) {
       var nx = epi.season.eps[epi.i + 1];
       url += '&next=' + encodeURIComponent('tv:' + d.tm + ':' + season + ':' + nx.n + ':' + (nx.t || ('Episode ' + nx.n))) +

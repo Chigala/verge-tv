@@ -425,9 +425,17 @@ async function vidrockSourcesFromBody(body, env, note) {
   for (const name of Object.keys(body)) {
     const entry = body[name];
     if (!entry || typeof entry !== 'object' || !entry.url) continue;
+    // Browser clients get AES-GCM blobs. Plaintext URLs are what datacenter
+    // clients receive, and those are decoys: the same unrelated playlist is
+    // served for every title. Never trust them — only sealed blobs decrypt
+    // to real streams. The player recovers via its own fetch + /seal.
+    if (/^https?:\/\//i.test(String(entry.url))) {
+      if (note) note('vidrock decoy ' + name, 'plaintext url dropped');
+      continue;
+    }
     try {
-      // Browser clients get AES-GCM blobs; datacenter clients get plaintext URLs.
-      const url = /^https?:\/\//i.test(String(entry.url)) ? String(entry.url) : await vidrockDecryptUrl(entry.url, key);
+      const url = await vidrockDecryptUrl(entry.url, key);
+      if (sources.some((existing) => existing.url === url)) continue;
       sources.push({
         name: String(name).slice(0, 40),
         type: entry.type === 'mp4' ? 'mp4' : 'hls',

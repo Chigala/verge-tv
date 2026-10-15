@@ -103,6 +103,7 @@
     episode: qs.get('episode') || '',
     title: qs.get('title') || '',
     startAt: parseInt(qs.get('startAt') || '0', 10) || 0,
+    rt: parseInt(qs.get('rt') || '0', 10) || 0,
     apiOverride: qs.get('api') || '',
     next: qs.get('next') || '',
     pid: qs.get('pid') || '',
@@ -431,7 +432,19 @@
   }
 
   /* ---------------- video events ---------------- */
-  video.addEventListener('loadedmetadata', function () { applyResume(); ui.tDur.textContent = fmt(video.duration); });
+  video.addEventListener('loadedmetadata', function () {
+    // Poisoned vidrock responses point at short unrelated clips (a song
+    // instead of the film); a real feature is never under half the expected
+    // runtime, so skip decoys like any other dead source.
+    if (P.rt >= 10 && video.duration > 0 && video.duration < P.rt * 60 * 0.5) {
+      console.warn('[native] decoy source (', Math.round(video.duration), 's vs expected ~', P.rt * 60, 's) — skipping');
+      ui.crumb.textContent = 'Skipping decoy source…';
+      nextSource();
+      return;
+    }
+    applyResume();
+    ui.tDur.textContent = fmt(video.duration);
+  });
   video.addEventListener('playing', function () { spinner(false); bigPause(false); failed = false; showHud(); });
   video.addEventListener('waiting', function () { if (!failed) spinner(true, ''); });
   video.addEventListener('pause', function () { bigPause(true); savePos(); showHud(); });
