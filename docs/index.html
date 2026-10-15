@@ -1368,7 +1368,7 @@
   }
 
   /* ================= trailer web page ================= */
-  var webOvT, webWaitT, webStatusT, webPollT = 0, webBaseUrl = '', webOrigin = '', webProgress = 0,
+  var webOvT, webWaitT, webGateT, webStatusT, webPollT = 0, webBaseUrl = '', webOrigin = '', webProgress = 0,
       webDuration = 0, webPaused = true, webApiReady = false, webProgressKey = '',
       webLastSavedAt = 0, webSeekStep = 10, webLastSeek = 0, webSrc = '',
       webCmdShape = '', webEverPlayed = false,
@@ -1401,25 +1401,34 @@
   }
   function postWebCommand(action, fields) {
     // Speak the dialect of whoever is actually in the frame, detected from its
-    // events: the primary speaks {action: ...}, VidFast speaks {command: ...}.
-    // Until the first event arrives, send both shapes — each player silently
-    // ignores the other's, so a mismatched template can never deaden the keys.
+    // events: the primary speaks {action: ...}, VidFast speaks {command: ...},
+    // cinesrc speaks {type:'cinesrc:command', command, args}. Until the first
+    // event arrives, broadcast all three shapes — each player silently ignores
+    // the others', so a mismatched template can never deaden the keys.
     var name, sent = false;
     function sendObject(message) {
       try { $('web-frame').contentWindow.postMessage(message, '*'); sent = true; } catch (e) {}
     }
-    if (webCmdShape !== 'command') {
+    if (webCmdShape === '' || webCmdShape === 'action') {
       var message = { action: action };
       if (fields) for (name in fields) if (fields.hasOwnProperty(name)) message[name] = fields[name];
       sendObject(message);
     }
-    if (webCmdShape !== 'action') {
+    if (webCmdShape === '' || webCmdShape === 'command') {
       var cmd = null;
       if (action === 'togglePlay') cmd = { command: webPaused ? 'play' : 'pause' };
       else if (action === 'play' || action === 'pause') cmd = { command: action };
       else if (action === 'seek' && fields) cmd = { command: 'seek', time: Math.floor(fields.time) };
       else if (action === 'getStatus') cmd = { command: 'getStatus' };
       if (cmd) sendObject(cmd);   // enterFullscreen has no VidFast command
+    }
+    if (webCmdShape === '' || webCmdShape === 'cinesrc') {
+      var cc = null, cargs = [];
+      if (action === 'togglePlay') cc = webPaused ? 'play' : 'pause';
+      else if (action === 'play' || action === 'pause') cc = action;
+      else if (action === 'seek' && fields) { cc = 'seek'; cargs = [Math.floor(fields.time)]; }
+      // No cinesrc getStatus/enterFullscreen: timeupdate streams ~4x/s anyway.
+      if (cc) sendObject({ type: 'cinesrc:command', command: cc, args: cargs });
     }
     if (sent) { keepWebControls(); return true; }
     return false;
@@ -1455,7 +1464,7 @@
     hideNextUp();
     $('web-title').textContent = title;
     $('web-help').innerHTML = webSrc === 'alt'
-      ? 'the backup source plays on its own<span class="key">BACK</span>close'
+      ? '<span class="key">OK</span>play/pause<span class="key">◀ ▶</span>seek<span class="key">BACK</span>close'
       : '<span class="key">OK</span>play/pause<span class="key">◀ ▶</span>seek<span class="key">▼</span>fullscreen<span class="key">BACK</span>close';
     paintWebProgress();
     $('web-ov').className = 'ov';
@@ -1464,6 +1473,7 @@
     keepWebControls();
     clearTimeout(webOvT);
     clearTimeout(webWaitT);
+    clearTimeout(webGateT);
     clearTimeout(webStatusT);
     clearInterval(webPollT);
     webOvT = setTimeout(function () { $('web-ov').className = 'ov off'; }, 4500);
@@ -1472,20 +1482,26 @@
     webPollT = setInterval(function () {
       if (screen === 'webs' && !nextUp) postWebCommand('getStatus');
     }, 3000);
-    // The primary may die silently; if it never answers, offer the backup.
-    // The backup is a black box (autoplays, never answers postMessage), so
-    // there is nothing to nag about on it — BACK is the way out.
-    if (webSrc !== 'alt') {
-      webWaitT = setTimeout(function () {
-        if (screen !== 'webs' || webApiReady) return;
-        $('web-help').innerHTML = '<span class="key">▼</span>try the backup player<span class="key">BACK</span>cancel';
-        $('web-ov').className = 'ov';
-      }, 8000);
-    }
+    webWaitT = setTimeout(function () {
+      if (screen !== 'webs' || webApiReady) return;
+      // The player never answered: offer the backup, then the way out.
+      $('web-help').innerHTML = webSrc !== 'alt'
+        ? '<span class="key">▼</span>try the backup player<span class="key">BACK</span>cancel'
+        : '<span class="key">▼</span>open full-page player<span class="key">BACK</span>cancel';
+      $('web-ov').className = 'ov';
+    }, 8000);
+    // The backup can answer yet sit on a click gate and never start. Give it
+    // longer than a slow load, then offer the way out.
+    webGateT = setTimeout(function () {
+      if (screen !== 'webs' || webEverPlayed || webSrc !== 'alt') return;
+      $('web-help').innerHTML = '<span class="key">▼</span>open full-page player<span class="key">BACK</span>cancel';
+      $('web-ov').className = 'ov';
+    }, 15000);
   }
   function closeWebPage() {
     clearTimeout(webOvT);
     clearTimeout(webWaitT);
+    clearTimeout(webGateT);
     clearTimeout(webStatusT);
     clearInterval(webPollT);
     hideNextUp();
@@ -1675,6 +1691,46 @@
         webPaused = !!message.paused;
       } else if (message.event === 'ended') {
         endedPlayback();
+      }
+      keepWebControls();
+      return;
+    }
+    // cinesrc speaks its own envelope: {type:'cinesrc:<event>'}. Like the
+    // tagged API above, a redirected inner player origin can send these, so
+    // this lives above the origin check — event.source pinned the frame.
+    if (typeof message.type === 'string' && message.type.indexOf('cinesrc:') === 0) {
+      var cEv = message.type.slice(8);
+      if (cEv === 'ready' || cEv === 'play') {
+        webApiReady = true;
+        webCmdShape = 'cinesrc';
+        clearTimeout(webWaitT);
+      }
+      if (typeof message.currentTime === 'number') webProgress = message.currentTime;
+      if (typeof message.duration === 'number') webDuration = message.duration;
+      if (cEv === 'play') {
+        webPaused = false;
+        webEverPlayed = true;
+        $('web-ov').className = 'ov off';
+      } else if (cEv === 'pause') {
+        webPaused = true;
+        saveWebProgress();
+        pokeWebOverlay();
+      } else if (cEv === 'timeupdate') {
+        webEverPlayed = true;
+        webPaused = false;
+        paintWebProgress();
+        if (Date.now() - webLastSavedAt > 5000) {
+          webLastSavedAt = Date.now();
+          saveWebProgress();
+        }
+      } else if (cEv === 'loadedmetadata' || cEv === 'seeked') {
+        paintWebProgress();
+        if (cEv === 'seeked') saveWebProgress();
+      } else if (cEv === 'ended') {
+        endedPlayback();
+      } else if (cEv === 'close') {
+        closeWebPage();
+        return;
       }
       keepWebControls();
       return;
