@@ -518,8 +518,20 @@
       for (var i = 0; i < l.length; i++)
         eps.push({ n: l[i].episode_number, t: l[i].name || '', d: l[i].air_date || '', rt: l[i].runtime || 0, r: round1(l[i].vote_average),
                    o: short(l[i].overview, 400), s: img(l[i].still_path, 'w300') });
-      ok({ n: n, nm: e.name || 'Season ' + n, o: short(e.overview, 400), v: liveVideos(e.videos), eps: eps });
+      ok({ n: n, nm: e.name || 'Season ' + n, o: short(e.overview, 400), v: liveVideos(e.videos), eps: airedOnly(eps) });
     }, fail);
+  }
+  // TMDB lists announced episodes (title, future air_date) that don't exist
+  // yet — hide anything airing after today. Empty dates stay (old seasons
+  // often lack them).
+  function airedOnly(eps) {
+    var now = new Date();
+    var today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
+    var out = [];
+    for (var i = 0; i < (eps || []).length; i++) {
+      if (!eps[i].d || eps[i].d <= today) out.push(eps[i]);
+    }
+    return out;
   }
   // Catalog file first, then TMDB.
   function getSeason(d, n, cb) {
@@ -530,7 +542,10 @@
       liveSeason(d.tm, n, function (s) { seasonCache[key] = s; cb(s); }, function () { cb(null); });
     }
     if (items[d.id] && items[d.id].live) return live();
-    getJSON('data/e/s' + key + '.json', function (s) { seasonCache[key] = s; cb(s); }, live);
+    getJSON('data/e/s' + key + '.json', function (s) {
+      if (s && s.eps) s.eps = airedOnly(s.eps);
+      seasonCache[key] = s; cb(s);
+    }, live);
   }
 
   /* ================= watch log =================
