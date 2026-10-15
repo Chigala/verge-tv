@@ -1508,10 +1508,17 @@
     }, 3000);
     webWaitT = setTimeout(function () {
       if (screen !== 'webs' || webApiReady) return;
-      // The player never answered: offer the backup, then the way out.
-      $('web-help').innerHTML = webSrc !== 'alt'
-        ? '<span class="key">▼</span>try the backup player<span class="key">BACK</span>cancel'
-        : '<span class="key">▼</span>open full-page player<span class="key">BACK</span>cancel';
+      // The primary never answered: the embed is dead or the title is missing
+      // (moviesapi goes silently blank — no events, no error). Don't wait for
+      // a keypress: fall back to the backup automatically. DOWN still switches
+      // earlier, BACK bails out before the timer.
+      if (webSrc !== 'alt') {
+        toast('The primary player isn’t responding — opening the backup…');
+        playMedia(webD, webSe, webEp, webLabel, 'alt');
+        return;
+      }
+      // The backup never answered: offer the way out.
+      $('web-help').innerHTML = '<span class="key">▼</span>open full-page player<span class="key">BACK</span>cancel';
       $('web-ov').className = 'ov';
     }, 8000);
     // The backup can answer yet sit on a click gate and never start. Give it
