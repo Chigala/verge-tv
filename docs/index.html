@@ -259,7 +259,7 @@
     <h1 id="e-title" class="clamp2"></h1>
     <div class="meta" id="e-meta"></div>
     <div id="e-over"></div>
-    <div class="btns"><div class="btn primary focus" id="e-play">▶ Watch episode</div><div class="btn" id="e-native">Native player</div></div>
+    <div class="btns"><div class="btn primary focus" id="e-play">▶ Watch episode</div><div class="btn" id="e-backup">Backup player</div><div class="btn" id="e-native">Native player</div></div>
   </div>
   <div class="keys"><span class="key">OK</span>watch episode<span class="key">▲ ▼</span>player option<span class="key">◀ ▶</span>previous / next episode<span class="key">BACK</span>close</div>
 </div>
@@ -1079,10 +1079,12 @@
     $('e-over').textContent = ep.o || 'No description yet.';
     var pos = readProgress(progressIdFor(epi.d, epi.season.n, ep.n));
     $('e-play').textContent = pos >= 30 ? '▶ Resume · ' + fmtTime(pos) : '▶ Watch episode';
+    $('e-backup').style.display = trailerApi ? '' : 'none';
     $('e-native').style.display = trailerApi ? '' : 'none';
     if (!trailerApi) epiBtn = 0;
     $('e-play').className = 'btn primary' + (epiBtn === 0 ? ' focus' : '');
-    $('e-native').className = 'btn' + (epiBtn === 1 ? ' focus' : '');
+    $('e-backup').className = 'btn' + (epiBtn === 1 ? ' focus' : '');
+    $('e-native').className = 'btn' + (epiBtn === 2 ? ' focus' : '');
     still.className = 'still';
     still.removeAttribute('src');
     var src = ep.s ? ep.s.replace('/w300/', '/w1280/') : epi.d.b;
@@ -1091,10 +1093,13 @@
   function episodeKey(k) {
     var n = epi.season.eps.length;
     if (k === K.UP || k === K.DOWN) {
-      if (trailerApi) { epiBtn = epiBtn === 0 ? 1 : 0; paintEpisode(); }
+      if (trailerApi) {
+        epiBtn = k === K.DOWN ? Math.min(2, epiBtn + 1) : Math.max(0, epiBtn - 1);
+        paintEpisode();
+      }
       return true;
     }
-    if (k === K.OK) { if (epiBtn === 1) playNativeEpisode(); else playEpisode(); return true; }
+    if (k === K.OK) { if (epiBtn === 2) playNativeEpisode(); else if (epiBtn === 1) playBackupEpisode(); else playEpisode(); return true; }
     if (k === K.LEFT && epi.i > 0) epi.i--;
     else if (k === K.RIGHT && epi.i < n - 1) epi.i++;
     else return false;
@@ -1116,7 +1121,13 @@
     var ep = epi.season.eps[epi.i];
     playNative(epi.d, epi.season.n, ep.n, epi.season.nm + ' · Episode ' + ep.n + (ep.t ? ' · ' + ep.t : ''));
   }
+  function playBackupEpisode() {
+    if (!epi) return;
+    var ep = epi.season.eps[epi.i];
+    playMedia(epi.d, epi.season.n, ep.n, epi.season.nm + ' · Episode ' + ep.n + (ep.t ? ' · ' + ep.t : ''), 'alt');
+  }
   $('e-play').onclick = playEpisode;
+  $('e-backup').onclick = playBackupEpisode;
   $('e-native').onclick = playNativeEpisode;
 
   /* ================= search ================= */
