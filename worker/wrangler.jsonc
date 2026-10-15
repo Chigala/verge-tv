@@ -11,6 +11,7 @@
     "enabled": false
   },
   "vars": {
-    "APP_ORIGIN": "https://chigala.github.io"
+    "APP_ORIGIN": "https://chigala.github.io",
+    "CINESRC_ENABLED": "0"
   }
 }

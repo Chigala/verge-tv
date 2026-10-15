@@ -121,7 +121,14 @@ function configuredPlayerUrl(request, env) {
       destination.pathname = destination.pathname.replace(/\/movie(?=\/|$)/i, '/tv');
     }
     if (type === 'tv' && !hasSeasonField) {
-      destination.pathname = destination.pathname.replace(/\/+$/, '') + '/' + season + '/' + episode;
+      // cinesrc.st rejects extra path segments; its player reads the episode
+      // from the query (?s=&e=) instead.
+      if (destination.hostname === 'cinesrc.st') {
+        destination.searchParams.set('s', season);
+        destination.searchParams.set('e', episode);
+      } else {
+        destination.pathname = destination.pathname.replace(/\/+$/, '') + '/' + season + '/' + episode;
+      }
     }
   }
   if (startAt) destination.searchParams.set('startAt', startAt);
@@ -154,9 +161,11 @@ function disclosePlayerUrl(request, env, cors) {
 /*
  * /stream — native-player stream resolution.
  *
- * Chain: moviesapi.to (primary) -> vidsrc.buzz (backup) -> vidrock.net
- * (datacenter-decoyed, kept for completeness). All return direct
- * HLS URLs, but those CDNs demand Referer/Origin headers that a TV webview
+ * Chain: moviesapi.to (primary) -> vidsrc.buzz (backup, gated off: blocks
+ * datacenter IPs) -> vidrock.net (datacenter-decoyed, kept for completeness)
+ * -> cinesrc.st (browser-relayed, deepest catalog, gated by CINESRC_ENABLED).
+ * All return direct HLS URLs, but those CDNs demand Referer/Origin headers
+ * that a TV webview
  * cannot set on <video> requests, so every URL is sealed into the existing
  * /media/ proxy, which injects the stored headers and rewrites playlists.
  *
@@ -258,6 +267,32 @@ async function streamNative(request, env, rootPath, cors) {
     }
     note('vidrock', 'no decryptable sources');
   } catch (error) { note('vidrock', error); }
+
+  // cinesrc.st: deepest catalog (1940s+ titles play), but resolution requires
+  // driving their embed in the Browser Rendering binding (wasm PoW + DataDome
+  // cookies), so it runs last, costs a browser session per call, and stays
+  // behind a kill-switch.
+  if (String(env.CINESRC_ENABLED || '') === '1') try {
+    const cinesrc = await resolveCinesrcStreams(type, tmdb, season, episode, env, note);
+    if (cinesrc && cinesrc.url) {
+      const refererHeaders = { Referer: CINESRC_ORIGIN + '/' };
+      const sources = [{
+        name: 'cinesrc',
+        type: 'hls',
+        url: await sealMedia(cinesrc.url, refererHeaders, 'master.m3u8'),
+      }];
+      const tracks = [];
+      for (const track of cinesrc.tracks) {
+        tracks.push({
+          label: track.label,
+          language: track.language,
+          src: await sealMedia(track.src, refererHeaders, 'subtitle-' + (tracks.length + 1) + '.vtt'),
+        });
+      }
+      return json({ provider: 'cinesrc', sources, tracks, expiresAt: expires }, 200, cors);
+    }
+    note('cinesrc', 'no playable sources');
+  } catch (error) { note('cinesrc', error); }
 
   if (debug && debugNotes.length) {
     return json({ error: 'STREAM_NOT_FOUND', debug: debugNotes }, 404, cors);
@@ -556,6 +591,101 @@ async function resolveVidsrcBuzzStreams(type, tmdb, season, episode, env, note) 
   } catch (_) { /* subtitles are best-effort */ }
 
   return { sources, tracks, referer: embedUrl };
+}
+
+/*
+ * cinesrc.st — browser-relay resolver (deepest catalog found; 1940s titles
+ * resolve). PARKED: resolution works, but playback doesn't survive leaving
+ * the browser session — /api/playlist/<token> answers 502 outside the
+ * minting session and the segment URLs on their CDN 404 once the session
+ * ends (~15 min). A real integration needs playlist-body capture in-session
+ * plus segment refresh, i.e. a sustained session relay. Until then the flag
+ * stays off and cinesrc serves as the (embed) backup player, which runs the
+ * whole session on the viewer's device.
+ *
+ * The chain itself: wasm PoW (pow-v3.wasm) behind DataDome cookies, driven
+ * by /300726c-prod.js + /donut.js; we run their embed page in the Browser
+ * Rendering binding and capture /api/playlist/* + /api/subtitles/search.
+ * Embed URLs: /embed/movie/{tmdb} and /embed/tv/{tmdb}?s={season}&e={episode}
+ * (their challenge code reads s/season and e/episode from the query).
+ */
+const CINESRC_ORIGIN = 'https://cinesrc.st';
+
+async function resolveCinesrcStreams(type, tmdb, season, episode, env, note) {
+  if (!env.BROWSER) throw codedError('BROWSER_RUN_NOT_CONFIGURED', 503);
+  const embedUrl = CINESRC_ORIGIN + (type === 'tv'
+    ? '/embed/tv/' + tmdb + '?s=' + season + '&e=' + episode
+    : '/embed/movie/' + tmdb);
+
+  let browser;
+  let page;
+  let masterUrl = '';
+  let subsJson = null;
+  try {
+    browser = await launchBrowser(env.BROWSER);
+    page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    page.on('request', (req) => {
+      const u = req.url();
+      if (!masterUrl && u.indexOf(CINESRC_ORIGIN + '/api/playlist/') === 0) masterUrl = u;
+    });
+    page.on('response', (resp) => {
+      if (subsJson) return;
+      if (resp.url().indexOf(CINESRC_ORIGIN + '/api/subtitles/search') !== 0) return;
+      resp.json().then((json) => {
+        if (json && Array.isArray(json.subtitles)) subsJson = json;
+      }).catch(() => {});
+    });
+
+    await page.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    const pages = new Set([page]);
+    const deadline = Date.now() + 25000;
+    while (!masterUrl && Date.now() < deadline) {
+      if (await browserShowsChallenge(pages)) throw codedError('SOURCE_REQUIRES_INTERACTION', 409);
+      await delay(700);
+    }
+    if (!masterUrl) throw codedError('NO_PLAYABLE_MEDIA', 404);
+    // Subtitle search fires right around playlist minting; short grace window.
+    const subsDeadline = Date.now() + 5000;
+    while (!subsJson && Date.now() < subsDeadline) await delay(400);
+    // Their player sometimes skips the call before playback; ask directly
+    // from inside the page so the session's DataDome cookies authenticate it.
+    if (!subsJson) {
+      try {
+        subsJson = await browserWithin(page.evaluate(async (tmdbId) => {
+          const r = await fetch('/api/subtitles/search', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ tmdbId: tmdbId, builtInSubtitles: [] }),
+            credentials: 'include',
+          });
+          return r.ok ? await r.json() : null;
+        }, String(tmdb)), 8000);
+        if (subsJson === BROWSER_TIMEOUT) subsJson = null;
+      } catch (_) { /* subtitles are best-effort */ }
+    }
+  } catch (error) {
+    if (error && error.code) throw error;
+    const message = String((error && error.message) || '').toLowerCase();
+    if (message.includes('429') || message.includes('time limit')) throw codedError('BROWSER_RUN_LIMIT_REACHED', 429);
+    throw codedError('BROWSER_RUN_FAILED', 502);
+  } finally {
+    if (page) { try { await browserWithin(page.close(), 1500); } catch (_) {} }
+    if (browser) { try { await browserWithin(browser.close(), 2000); } catch (_) {} }
+  }
+
+  assertSafeUpstreamUrl(masterUrl, env);
+  const tracks = [];
+  for (const sub of ((subsJson && subsJson.subtitles) || [])) {
+    if (tracks.length >= 12) break;
+    if (!sub || typeof sub.url !== 'string' || !/^https:\/\//i.test(sub.url)) continue;
+    if (String(sub.format || '').toLowerCase() !== 'vtt') continue;
+    tracks.push({
+      label: String(sub.display || sub.language || 'Subtitle').slice(0, 40),
+      language: String(sub.language || '').slice(0, 12),
+      src: sub.url,
+    });
+  }
+  return { url: masterUrl, tracks };
 }
 
 async function resolveTrailer(request, env, rootPath, cors) {
