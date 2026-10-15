@@ -682,3 +682,106 @@ test('stream returns 404 when no provider has the title', async (t) => {
   assert.equal(resolved.status, 404);
   assert.equal((await resolved.json()).error, 'STREAM_NOT_FOUND');
 });
+
+/* ---------- /seal (client-fetched vidrock fallback) ---------- */
+
+function sealRequest(body, method) {
+  return new Request('https://worker.example.invalid/' + STREAM_ENV.ACCESS_PATH + '/seal', {
+    method: method || 'POST',
+    headers: { Origin: STREAM_ENV.APP_ORIGIN, 'Content-Type': 'application/json' },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
+}
+
+test('seal accepts POST only and validates the envelope', async () => {
+  const get = await handleRequest(sealRequest(undefined, 'GET'), STREAM_ENV);
+  assert.equal(get.status, 405);
+
+  const garbage = await handleRequest(sealRequest('not json'), STREAM_ENV);
+  assert.equal(garbage.status, 400);
+
+  const badType = await handleRequest(sealRequest({ type: 'anime', tmdb: '550', vidrock: {} }), STREAM_ENV);
+  assert.equal(badType.status, 400);
+
+  const badId = await handleRequest(sealRequest({ type: 'movie', tmdb: 'abc', vidrock: {} }), STREAM_ENV);
+  assert.equal(badId.status, 400);
+
+  const tvNoEpisode = await handleRequest(sealRequest({ type: 'tv', tmdb: '66732', season: '1', vidrock: {} }), STREAM_ENV);
+  assert.equal(tvNoEpisode.status, 400);
+
+  const noBody = await handleRequest(sealRequest({ type: 'movie', tmdb: '550' }), STREAM_ENV);
+  assert.equal((await noBody.json()).error, 'INVALID_VIDROCK_BODY');
+
+  const hugeUrl = await handleRequest(sealRequest({ type: 'movie', tmdb: '550', vidrock: { Nova: { url: 'x'.repeat(5000) } } }), STREAM_ENV);
+  assert.equal(hugeUrl.status, 400);
+});
+
+test('seal 404s when no blob decrypts', async () => {
+  const resolved = await handleRequest(sealRequest({
+    type: 'movie', tmdb: '550',
+    vidrock: { Nova: { url: 'AAAA' + 'A'.repeat(40), type: 'hls' }, Empty: { url: null } },
+  }), STREAM_ENV);
+  assert.equal(resolved.status, 404);
+  assert.equal((await resolved.json()).error, 'STREAM_NOT_FOUND');
+});
+
+test('seal decrypts client-fetched blobs and seals them for the media proxy', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const goodUrl = await encryptVidrockUrl('https://cdn.clientfetch.invalid/movie/master.m3u8');
+  const poisonUrl = 'https://cdn.poison.invalid/movie/fake.m3u8';
+
+  globalThis.fetch = async (input, init = {}) => {
+    const url = String(input);
+    const headers = new Headers(init.headers || {});
+    if (url === 'https://moviesapi.to/api/vidora/v1/subtitles/movie/550') {
+      return new Response(JSON.stringify({ tracks: [{ src: 'subs/en.vtt', label: 'English', language: 'en' }] }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (url === 'https://cdn.clientfetch.invalid/movie/master.m3u8') {
+      assert.equal(headers.get('referer'), 'https://vidrock.net/');
+      assert.equal(headers.get('origin'), 'https://vidrock.net');
+      return new Response('#EXTM3U\n#EXTINF:4,\nseg-1.ts', { headers: { 'Content-Type': 'application/vnd.apple.mpegurl' } });
+    }
+    if (url === 'https://cdn.clientfetch.invalid/movie/seg-1.ts') {
+      return new Response(new Uint8Array([7, 7]), { headers: { 'Content-Type': 'video/mp2t' } });
+    }
+    throw new Error('unexpected synthetic URL: ' + url);
+  };
+
+  const headers = { Origin: STREAM_ENV.APP_ORIGIN };
+  const resolved = await handleRequest(sealRequest({
+    type: 'movie', tmdb: '550',
+    vidrock: { Orion: { url: goodUrl, type: 'hls' }, Poison: { url: poisonUrl, type: 'hls' } },
+  }), STREAM_ENV);
+  assert.equal(resolved.status, 200);
+  const data = await resolved.json();
+  assert.equal(data.provider, 'vidrock-client');
+  assert.equal(data.sources.length, 2);
+  assert.equal(data.sources[0].name, 'Orion');
+  assert.match(data.sources[0].url, /\/media\//);
+  assert.doesNotMatch(data.sources[0].url, /cdn\.clientfetch\.invalid/);
+  assert.equal(data.tracks.length, 1);
+  assert.equal(data.tracks[0].label, 'English');
+
+  // the sealed client-fetched source plays through the proxy
+  const manifest = await handleRequest(new Request(data.sources[0].url, { headers }), STREAM_ENV);
+  assert.equal(manifest.status, 200);
+  const manifestText = await manifest.text();
+  assert.match(manifestText, /worker\.example\.invalid/);
+  const segmentUrl = manifestText.split('\n').find((line) => line && line[0] !== '#');
+  const segment = await handleRequest(new Request(segmentUrl, { headers }), STREAM_ENV);
+  assert.deepEqual(Array.from(new Uint8Array(await segment.arrayBuffer())), [7, 7]);
+});
+
+test('seal refuses to proxy private hosts smuggled in a blob', async () => {
+  const internalUrl = await encryptVidrockUrl('https://192.168.0.1/admin/master.m3u8');
+  const resolved = await handleRequest(sealRequest({
+    type: 'movie', tmdb: '550', vidrock: { Evil: { url: internalUrl, type: 'hls' } },
+  }), STREAM_ENV);
+  // the URL decrypts fine but fails the upstream safety check, and no other
+  // source exists, so the endpoint surfaces a failure rather than sealing it
+  assert.ok(resolved.status === 404 || resolved.status >= 500);
+});

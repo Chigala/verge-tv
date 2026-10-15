@@ -28,7 +28,7 @@ export async function handleRequest(request, env) {
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: cors });
   }
-  if (request.method !== 'GET' && request.method !== 'HEAD') {
+  if (request.method !== 'GET' && request.method !== 'HEAD' && request.method !== 'POST') {
     return safeError('METHOD_NOT_ALLOWED', 405, cors);
   }
 
@@ -59,6 +59,13 @@ export async function handleRequest(request, env) {
     if (!originAllowed(request, env)) return safeError('ORIGIN_NOT_ALLOWED', 403, cors);
     return streamNative(request, env, rootPath, cors);
   }
+  if (requestUrl.pathname === rootPath + '/seal') {
+    if (request.method !== 'POST') return safeError('METHOD_NOT_ALLOWED', 405, cors);
+    if (!env.PLAYBACK_TOKEN_SECRET) return safeError('WORKER_NOT_CONFIGURED', 503, cors);
+    if (!originAllowed(request, env)) return safeError('ORIGIN_NOT_ALLOWED', 403, cors);
+    return sealNative(request, env, rootPath, cors);
+  }
+  if (request.method === 'POST') return safeError('METHOD_NOT_ALLOWED', 405, cors);
   if (requestUrl.pathname.indexOf(rootPath + '/media/') === 0) {
     if (!env.PLAYBACK_TOKEN_SECRET) return safeError('WORKER_NOT_CONFIGURED', 503, cors);
     if (!originAllowed(request, env)) return safeError('ORIGIN_NOT_ALLOWED', 403, cors);
@@ -213,31 +220,8 @@ async function streamNative(request, env, rootPath, cors) {
   try {
     const vidrockSources = await resolveVidrockStreams(type, tmdb, season, episode, env, note);
     if (vidrockSources.length) {
-      const mediaHeaders = { Referer: VIDROCK_ORIGIN + '/', Origin: VIDROCK_ORIGIN };
-      const sources = [];
-      for (const source of vidrockSources.slice(0, 6)) {
-        const sealed = {
-          name: source.name,
-          type: source.type,
-          url: await sealMedia(source.url, mediaHeaders, source.type === 'mp4' ? 'video.mp4' : 'master.m3u8'),
-        };
-        if (debug) sealed.raw = source.url;
-        sources.push(sealed);
-      }
-      // Subtitles come from moviesapi's community subtitle index, which is
-      // keyed by TMDB id and works even when the movie itself is unencoded.
-      const tracks = [];
-      try {
-        const subtitleTracks = await resolveMoviesapiSubtitleTracks(type, tmdb, season, episode, env);
-        const subPageUrl = MOVIESAPI_ORIGIN + (type === 'tv' ? '/tv/' + tmdb + '/' + season + '/' + episode : '/movie/' + tmdb);
-        for (const track of subtitleTracks.slice(0, 24)) {
-          tracks.push({
-            label: track.label,
-            language: track.language,
-            src: await sealMedia(track.src, { Referer: subPageUrl, 'x-player-key': moviesapiKey(env) }, 'subtitle-' + (tracks.length + 1) + '.vtt'),
-          });
-        }
-      } catch (_) { /* subtitles are best-effort */ }
+      const sources = await sealVidrockSources(vidrockSources, sealMedia, debug);
+      const tracks = await sealSubtitleTracks(type, tmdb, season, episode, env, sealMedia);
       return json({ provider: 'vidrock', sources, tracks, expiresAt: expires }, 200, cors);
     }
     note('vidrock', 'no decryptable sources');
@@ -247,6 +231,104 @@ async function streamNative(request, env, rootPath, cors) {
     return json({ error: 'STREAM_NOT_FOUND', debug: debugNotes }, 404, cors);
   }
   return safeError('STREAM_NOT_FOUND', 404, cors);
+}
+
+/*
+ * /seal (POST) — client-fetched vidrock fallback.
+ *
+ * VidRock serves poisoned plaintext URLs to datacenter IPs, so when the
+ * worker-resolved vidrock sources keep dying, the player fetches
+ * vidrock.net/api/... itself (the TV's residential IP gets the real AES-GCM
+ * blobs) and posts the untouched response here. Only genuine vidrock blobs
+ * decrypt with the vidrock key, and every decrypted URL still passes
+ * assertSafeUpstreamUrl before being sealed into /media/.
+ *
+ * Body: { type, tmdb, season?, episode?, vidrock: <raw api response object> }
+ * Response mirrors /stream: { provider: 'vidrock-client', sources, tracks, expiresAt }
+ */
+async function sealNative(request, env, rootPath, cors) {
+  let body = null;
+  try {
+    const text = await request.text();
+    if (text.length > 65536) return safeError('PAYLOAD_TOO_LARGE', 413, cors);
+    body = JSON.parse(text);
+  } catch (_) {
+    return safeError('INVALID_JSON', 400, cors);
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return safeError('INVALID_JSON', 400, cors);
+
+  const type = body.type;
+  const tmdb = String(body.tmdb || '');
+  const season = String(body.season || '');
+  const episode = String(body.episode || '');
+  if (type !== 'movie' && type !== 'tv') return safeError('INVALID_MEDIA_TYPE', 400, cors);
+  if (!/^\d{1,12}$/.test(tmdb)) return safeError('INVALID_TMDB_ID', 400, cors);
+  if (type === 'tv' && !/^\d{1,4}$/.test(season)) return safeError('INVALID_SEASON', 400, cors);
+  if (type === 'tv' && !/^\d{1,5}$/.test(episode)) return safeError('INVALID_EPISODE', 400, cors);
+
+  const vidrockBody = body.vidrock;
+  if (!vidrockBody || typeof vidrockBody !== 'object' || Array.isArray(vidrockBody)) return safeError('INVALID_VIDROCK_BODY', 400, cors);
+  const names = Object.keys(vidrockBody);
+  if (names.length > 16) return safeError('INVALID_VIDROCK_BODY', 400, cors);
+  for (const name of names) {
+    const entry = vidrockBody[name];
+    if (entry == null) continue;
+    if (typeof entry !== 'object' || Array.isArray(entry)) return safeError('INVALID_VIDROCK_BODY', 400, cors);
+    if (entry.url != null && (typeof entry.url !== 'string' || entry.url.length > 4096)) return safeError('INVALID_VIDROCK_BODY', 400, cors);
+  }
+
+  const expires = Math.floor(Date.now() / 1000) + NATIVE_STREAM_TTL_SECONDS;
+  const sealMedia = async (target, headers, filename) => {
+    assertSafeUpstreamUrl(target, env);
+    const token = await sealPayload({ u: target, e: expires, h: headers }, env.PLAYBACK_TOKEN_SECRET);
+    const mediaUrl = new URL(request.url);
+    mediaUrl.pathname = rootPath + '/media/' + token + '/' + filename;
+    mediaUrl.search = '';
+    return mediaUrl.toString();
+  };
+
+  try {
+    const vidrockSources = await vidrockSourcesFromBody(vidrockBody, env, null);
+    if (!vidrockSources.length) return safeError('STREAM_NOT_FOUND', 404, cors);
+    const sources = await sealVidrockSources(vidrockSources, sealMedia, false);
+    const tracks = await sealSubtitleTracks(type, tmdb, season, episode, env, sealMedia);
+    return json({ provider: 'vidrock-client', sources, tracks, expiresAt: expires }, 200, cors);
+  } catch (error) {
+    return safeError(errorCode(error, 'SEAL_FAILED'), statusForError(error, 502), cors);
+  }
+}
+
+async function sealVidrockSources(vidrockSources, sealMedia, debug) {
+  const mediaHeaders = { Referer: VIDROCK_ORIGIN + '/', Origin: VIDROCK_ORIGIN };
+  const sources = [];
+  for (const source of vidrockSources.slice(0, 6)) {
+    const sealed = {
+      name: source.name,
+      type: source.type,
+      url: await sealMedia(source.url, mediaHeaders, source.type === 'mp4' ? 'video.mp4' : 'master.m3u8'),
+    };
+    if (debug) sealed.raw = source.url;
+    sources.push(sealed);
+  }
+  return sources;
+}
+
+async function sealSubtitleTracks(type, tmdb, season, episode, env, sealMedia) {
+  // Subtitles come from moviesapi's community subtitle index, which is
+  // keyed by TMDB id and works even when the movie itself is unencoded.
+  const tracks = [];
+  try {
+    const subtitleTracks = await resolveMoviesapiSubtitleTracks(type, tmdb, season, episode, env);
+    const subPageUrl = MOVIESAPI_ORIGIN + (type === 'tv' ? '/tv/' + tmdb + '/' + season + '/' + episode : '/movie/' + tmdb);
+    for (const track of subtitleTracks.slice(0, 24)) {
+      tracks.push({
+        label: track.label,
+        language: track.language,
+        src: await sealMedia(track.src, { Referer: subPageUrl, 'x-player-key': moviesapiKey(env) }, 'subtitle-' + (tracks.length + 1) + '.vtt'),
+      });
+    }
+  } catch (_) { /* subtitles are best-effort */ }
+  return tracks;
 }
 
 function moviesapiKey(env) {
@@ -329,11 +411,15 @@ async function resolveVidrockStreams(type, tmdb, season, episode, env, note) {
   const response = await fetch(VIDROCK_ORIGIN + '/api/' + path, { headers: { 'User-Agent': STREAM_API_AGENT } });
   if (!response.ok) throw codedError('VIDROCK_HTTP_' + response.status, 502);
   const body = await response.json().catch(() => null);
+  if (note) note('vidrock raw', JSON.stringify(body).slice(0, 300));
+  return vidrockSourcesFromBody(body, env, note);
+}
+
+async function vidrockSourcesFromBody(body, env, note) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     if (note) note('vidrock shape', 'unexpected response shape');
     return [];
   }
-  if (note) note('vidrock raw', JSON.stringify(body).slice(0, 300));
   const key = await vidrockDecryptKey(env);
   const sources = [];
   for (const name of Object.keys(body)) {
@@ -1579,7 +1665,7 @@ function corsHeaders(request, env) {
   const allowed = origin && expected && origin === expected ? origin : (expected || origin || '*');
   return {
     'Access-Control-Allow-Origin': allowed,
-    'Access-Control-Allow-Methods': 'GET,HEAD,OPTIONS',
+    'Access-Control-Allow-Methods': 'GET,HEAD,POST,OPTIONS',
     'Access-Control-Allow-Headers': 'Range,Content-Type',
     'Access-Control-Expose-Headers': 'Content-Length,Content-Range,Accept-Ranges',
     'Access-Control-Max-Age': '86400',

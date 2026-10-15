@@ -122,6 +122,8 @@
   /* ---------------- state ---------------- */
   var resolved = null;          // /stream response
   var sourceIdx = 0;
+  var apiBase = '';             // worker base, remembered for the /seal fallback
+  var clientVidrockTried = false;
   var hls = null;
   var posKey = 'vergeNative.pos.' + P.type + '.' + P.tmdb + (P.type === 'tv' ? '.' + P.season + '.' + P.episode : '');
   var resumeT = P.startAt || 0;
@@ -187,6 +189,7 @@
     spinner(true, 'Finding stream…');
     var done = function (err, data) { cb(err, data); };
     var finish = function (api) {
+      apiBase = api;
       var url = api.replace(/\/+$/, '') + '/stream?type=' + encodeURIComponent(P.type) +
         '&tmdb=' + encodeURIComponent(P.tmdb) +
         (P.type === 'tv' ? '&season=' + encodeURIComponent(P.season) + '&episode=' + encodeURIComponent(P.episode) : '');
@@ -260,9 +263,69 @@
   }
 
   function failAll() {
+    // Server-resolved sources are dead; the TV's own IP may still get the
+    // real vidrock blobs, so try the client-side resolver once before giving up.
+    if (tryClientVidrock(function () { failAll(); })) return;
     failed = true;
     spinner(false);
     overlay('This title won’t play right now', 'Every source failed. It may be missing or temporarily unavailable.', 'Press <b>BACK</b> to return');
+  }
+
+  /* ---------------- client-side vidrock fallback ----------------
+   * VidRock poisons the plaintext URLs it hands to datacenter IPs, which is
+   * what the worker's /stream gets. A TV on a residential IP receives the
+   * real AES-GCM blobs instead, so fetch vidrock.net directly and post the
+   * untouched response to the worker's /seal endpoint, which decrypts the
+   * blobs and seals the URLs into the /media/ proxy. */
+  var clientVidrockGiveUp = null;
+  function tryClientVidrock(giveUp) {
+    if (clientVidrockTried || !P.tmdb || !apiBase) return false;
+    clientVidrockTried = true;
+    clientVidrockGiveUp = giveUp || null;
+    spinner(true, 'Trying alternate resolver…');
+    var path = P.type === 'tv' ? 'tv/' + P.tmdb + '/' + P.season + '/' + P.episode : 'movie/' + P.tmdb;
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', 'https://vidrock.net/api/' + path, true);
+    xhr.timeout = 12000;
+    xhr.onload = function () {
+      var body = null;
+      try { body = JSON.parse(xhr.responseText || 'null'); } catch (e) {}
+      if (xhr.status !== 200 || !body || typeof body !== 'object') return clientVidrockFailed();
+      sealClientVidrock(body);
+    };
+    xhr.onerror = xhr.ontimeout = function () { clientVidrockFailed(); };
+    try { xhr.send(); } catch (e) { clientVidrockFailed(); }
+    return true;
+  }
+  function sealClientVidrock(vidrockBody) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', apiBase.replace(/\/+$/, '') + '/seal', true);
+    xhr.timeout = 15000;
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.onload = function () {
+      var data = null;
+      try { data = JSON.parse(xhr.responseText || 'null'); } catch (e) {}
+      if (xhr.status !== 200 || !data || !data.sources || !data.sources.length) return clientVidrockFailed();
+      resolved = data;
+      sourceIdx = 0;
+      reloadedOnce = true;   // these URLs are fresh; don't loop through /stream again
+      failed = false;
+      spinner(false);
+      ui.crumb.textContent = 'alternate source';
+      loadTracks();
+      attachSource(0);
+      showHud();
+      video.play().catch(function () { /* autoplay blocked -> user presses OK */ });
+    };
+    xhr.onerror = xhr.ontimeout = function () { clientVidrockFailed(); };
+    try {
+      xhr.send(JSON.stringify({ type: P.type, tmdb: P.tmdb, season: P.season, episode: P.episode, vidrock: vidrockBody }));
+    } catch (e) { clientVidrockFailed(); }
+  }
+  function clientVidrockFailed() {
+    var cb = clientVidrockGiveUp;
+    clientVidrockGiveUp = null;
+    if (cb) cb();
   }
 
   function applyResume() {
@@ -407,8 +470,15 @@
   function boot(isRetry) {
     resolveStream(function (err, data) {
       if (err || !data || !data.sources || !data.sources.length) {
+        var notFound = err === 'not_found';
+        if (tryClientVidrock(function () {
+          spinner(false);
+          if (notFound) overlay('Not available yet', 'No source has this title right now. Try the regular player.', 'Press <b>BACK</b> to return');
+          else overlay('Couldn’t reach the stream service', String(err || 'unknown'), 'Press <b>BACK</b> to return');
+          failed = true;
+        })) return;
         spinner(false);
-        if (err === 'not_found') overlay('Not available yet', 'No source has this title right now. Try the regular player.', 'Press <b>BACK</b> to return');
+        if (notFound) overlay('Not available yet', 'No source has this title right now. Try the regular player.', 'Press <b>BACK</b> to return');
         else overlay('Couldn’t reach the stream service', String(err || 'unknown'), 'Press <b>BACK</b> to return');
         failed = true;
         return;
