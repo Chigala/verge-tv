@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>verge-tv diagnostics</title>
+<!--
+  verge-tv TV diagnostics page.
+
+  Open this on the TV (same way you load any page in the VIDAA webview):
+      https://chigala.github.io/verge-tv/diag.html
+
+  It auto-runs a battery of probes and shows PASS/FAIL on screen:
+    - environment: user agent, fetch/Promise/WebCrypto/MSE support
+    - controls: same-origin read, worker /health (CORS-enabled),
+      vidrock.net api (third-party, CORS *)  — all expected to pass
+    - THE EXPERIMENT: read vidsrc.buzz / videm.xyz pages, which send NO
+      CORS headers. If those pass, the webview has relaxed web security
+      and client-side resolvers for those providers become possible.
+    - discriminator: fetch(..., {mode:'no-cors'}) to the same host. This
+      succeeds even when CORS is enforced (opaque response), so
+      "no-cors PASS + read FAIL" = CORS is definitely being enforced.
+
+  BACK / ESC exits.
+-->
+<style>
+  html, body { margin: 0; background: #0b0d12; color: #e8eaf0; font-family: "Helvetica Neue", Arial, sans-serif; }
+  #wrap { padding: 3vw 4vw; }
+  h1 { font-size: 2.4vw; margin: 0 0 .4vw; }
+  #ua { font-size: 1.1vw; color: #8a90a0; word-break: break-all; margin-bottom: 1.6vw; }
+  .row { display: flex; align-items: baseline; padding: .7vw 1vw; border-bottom: 1px solid #1d212b; font-size: 1.5vw; }
+  .row .nm { flex: 1; padding-right: 2vw; }
+  .row .st { font-weight: 700; width: 7vw; text-align: right; }
+  .row .dt { width: 34vw; text-align: right; color: #9aa0ae; font-size: 1.2vw; word-break: break-all; }
+  .pass .st { color: #4ade80; }
+  .fail .st { color: #ff5f6b; }
+  .skip .st { color: #9aa0ae; }
+  .pend .st { color: #fbbf24; }
+  #verdict { margin-top: 1.8vw; font-size: 1.7vw; line-height: 1.5; padding: 1.2vw 1.4vw; background: #141823; border-radius: .8vw; }
+  #hint { margin-top: 1.2vw; font-size: 1.2vw; color: #6b7280; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1>verge-tv diagnostics</h1>
+  <div id="ua"></div>
+  <div id="rows"></div>
+  <div id="verdict">Running…</div>
+  <div id="hint">BACK / ESC to exit</div>
+</div>
+<script>
+(function () {
+  'use strict';
+  var rows = document.getElementById('rows');
+  var verdict = document.getElementById('verdict');
+  document.getElementById('ua').textContent = navigator.userAgent;
+
+  function row(name) {
+    var d = document.createElement('div');
+    d.className = 'row pend';
+    d.innerHTML = '<div class="nm"></div><div class="dt"></div><div class="st">…</div>';
+    d.querySelector('.nm').textContent = name;
+    rows.appendChild(d);
+    return {
+      done: function (ok, detail, cls) {
+        d.className = 'row ' + (cls || (ok ? 'pass' : 'fail'));
+        d.querySelector('.st').textContent = ok ? 'PASS' : (cls === 'skip' ? 'SKIP' : 'FAIL');
+        d.querySelector('.dt').textContent = detail || '';
+      }
+    };
+  }
+
+  function xhrGet(url, timeoutMs, cb) {
+    var xhr = new XMLHttpRequest();
+    var finished = false;
+    function finish(err, status, sample) {
+      if (finished) return; finished = true;
+      cb(err, status, sample);
+    }
+    try {
+      xhr.open('GET', url, true);
+      xhr.timeout = timeoutMs || 10000;
+      xhr.onload = function () {
+        var text = '';
+        try { text = String(xhr.responseText || '').slice(0, 60).replace(/\s+/g, ' '); } catch (e) { text = '[unreadable]'; }
+        finish(null, xhr.status, text);
+      };
+      xhr.onerror = function () { finish('network-or-cors', xhr.status || 0); };
+      xhr.ontimeout = function () { finish('timeout', 0); };
+      xhr.send();
+    } catch (e) { finish('exception: ' + (e && e.message), 0); }
+  }
+
+  var results = {};
+  var steps = [];
+
+  function step(name, fn) { steps.push({ name: name, fn: fn }); }
+
+  /* ---- environment ---- */
+  step('fetch() available', function (r) { r.done(typeof fetch === 'function', ''); });
+  step('Promise available', function (r) { r.done(typeof Promise === 'function', ''); });
+  step('WebCrypto (crypto.subtle) available', function (r) {
+    r.done(!!(window.crypto && crypto.subtle && crypto.subtle.decrypt), '');
+  });
+  step('MSE (hls.js can work)', function (r) {
+    r.done(!!(window.MediaSource || window.WebKitMediaSource), '');
+  });
+  step('native HLS in <video>', function (r) {
+    var v = document.createElement('video');
+    var can = v.canPlayType ? v.canPlayType('application/vnd.apple.mpegurl') : '';
+    r.done(!!can, can || 'not supported');
+  });
+
+  /* ---- controls ---- */
+  step('control: same-origin read (data/home.json)', function (r) {
+    xhrGet('data/home.json?t=' + Date.now(), 10000, function (err, status, sample) {
+      r.done(!err && status === 200, err ? String(err) : ('http ' + status));
+    });
+  });
+  step('control: worker /health (CORS-enabled)', function (r) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', 'data/runtime.json?t=' + Date.now(), true);
+    xhr.timeout = 8000;
+    xhr.onload = function () {
+      var base = '';
+      try { base = JSON.parse(xhr.responseText || '{}').trailerApi || ''; } catch (e) {}
+      if (!base) { r.done(false, 'no runtime.json', 'skip'); return; }
+      xhrGet(base.replace(/\/+$/, '') + '/health', 10000, function (err, status) {
+        r.done(!err && status === 200, err ? String(err) : ('http ' + status));
+      });
+    };
+    xhr.onerror = xhr.ontimeout = function () { r.done(false, 'runtime.json unreadable', 'skip'); };
+    try { xhr.send(); } catch (e) { r.done(false, 'runtime.json unreadable', 'skip'); }
+  });
+  step('control: vidrock.net api (third-party, CORS *)', function (r) {
+    xhrGet('https://vidrock.net/api/movie/550', 12000, function (err, status) {
+      results.vidrock = !err && status === 200;
+      r.done(results.vidrock, err ? String(err) : ('http ' + status));
+    });
+  });
+
+  /* ---- the experiment ---- */
+  step('EXPERIMENT: read vidsrc.buzz embed page (no CORS headers)', function (r) {
+    xhrGet('https://vidsrc.buzz/embed/movie/550', 15000, function (err, status, sample) {
+      results.buzzRead = !err && status === 200;
+      r.done(results.buzzRead, err ? String(err) : ('http ' + status + ' · ' + (sample || '').slice(0, 30)));
+    });
+  });
+  step('EXPERIMENT: read videm.xyz embed page (no CORS headers)', function (r) {
+    xhrGet('https://videm.xyz/embed/movie/550', 15000, function (err, status) {
+      results.videmRead = !err && status === 200;
+      r.done(results.videmRead, err ? String(err) : ('http ' + status));
+    });
+  });
+  step('discriminator: fetch vidsrc.buzz with mode:no-cors', function (r) {
+    if (typeof fetch !== 'function') { r.done(false, 'no fetch()', 'skip'); return; }
+    fetch('https://vidsrc.buzz/embed/movie/550', { mode: 'no-cors' }).then(function (resp) {
+      results.buzzNoCors = true;
+      r.done(true, 'opaque response received (type=' + resp.type + ')');
+    }).catch(function (e) {
+      results.buzzNoCors = false;
+      r.done(false, String((e && e.message) || e).slice(0, 60));
+    });
+  });
+
+  function finish() {
+    var msg;
+    if (results.buzzRead || results.videmRead) {
+      msg = '🎉 RELAXED WEBVIEW: this TV reads cross-origin pages WITHOUT CORS headers. ' +
+        'Client-side resolvers for vidsrc.buzz-family providers are unlocked — tell Chigala "relaxed".';
+    } else if (results.buzzNoCors && !results.buzzRead) {
+      msg = '🔒 CORS ENFORCED (standard browser behavior): the host is reachable but reads are blocked. ' +
+        'vidsrc.buzz stays embed-only; VidRock-style CORS-open providers remain the only client-side path. ' +
+        'Tell Chigala "enforced".';
+    } else if (!results.buzzNoCors && !results.buzzRead) {
+      msg = '⚠️ vidsrc.buzz is not reachable at all from this network (both read and no-cors failed). ' +
+        'CORS question is undecided — check network/DNS. Tell Chigala "unreachable".';
+    } else {
+      msg = 'Mixed results — screenshot this page and send it over.';
+    }
+    if (results.vidrock === false) {
+      msg += ' Note: the vidrock control FAILED too, which would also explain native-player fallback issues.';
+    }
+    verdict.textContent = msg;
+  }
+
+  (function run(i) {
+    if (i >= steps.length) { finish(); return; }
+    var handle = row(steps[i].name);
+    var rowEl = rows.children[rows.children.length - 1];
+    var wait = 0, cap = 0, advanced = false;
+    function next() {
+      if (advanced) return;
+      advanced = true;
+      clearInterval(wait); clearTimeout(cap);
+      run(i + 1);
+    }
+    try { steps[i].fn(handle); } catch (e) { handle.done(false, 'exception'); }
+    // done() swaps the row's class away from 'pend' — poll for that
+    wait = setInterval(function () {
+      if (rowEl.className.indexOf('pend') < 0) next();
+    }, 120);
+    cap = setTimeout(function () {
+      if (rowEl.className.indexOf('pend') >= 0) handle.done(false, 'stuck');
+      next();
+    }, 18000);
+  })(0);
+
+  document.addEventListener('keydown', function (e) {
+    var k = e.keyCode;
+    if (k === 8 || k === 27 || k === 461 || k === 10009 || k === 10071) { history.back(); e.preventDefault(); }
+  });
+})();
+</script>
+</body>
+</html>
