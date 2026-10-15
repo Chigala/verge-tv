@@ -14,6 +14,9 @@
 
   Params: ?type=movie|tv &tmdb=ID [&season=S&episode=E] [&title=...]
           [&startAt=SECONDS] [&api=WORKER_BASE_OVERRIDE]
+          [&pid=APP_PROGRESS_ID] [&next=...&npid=NEXT_PROGRESS_ID]
+          pid mirrors playback progress into the app's verge-progress-* keys
+          (seconds; -1 once finished) so Continue Watching stays in step.
   Remote: OK play/pause · LEFT/RIGHT seek 10s · FF/RW 30s · UP subtitles ·
           BACK save & exit
 -->
@@ -101,7 +104,9 @@
     title: qs.get('title') || '',
     startAt: parseInt(qs.get('startAt') || '0', 10) || 0,
     apiOverride: qs.get('api') || '',
-    next: qs.get('next') || ''
+    next: qs.get('next') || '',
+    pid: qs.get('pid') || '',
+    npid: qs.get('npid') || ''
   };
 
   var video = document.getElementById('video');
@@ -161,6 +166,11 @@
     try {
       if (!video.duration || ended) return;
       localStorage.setItem(posKey, JSON.stringify({ t: Math.floor(video.currentTime), d: Math.floor(video.duration), ts: Date.now() }));
+      if (P.pid) {
+        // Bridge for the app's Continue Watching: plain seconds + duration.
+        localStorage.setItem('verge-progress-' + P.pid, String(Math.floor(video.currentTime)));
+        localStorage.setItem('verge-dur-' + P.pid, String(Math.floor(video.duration)));
+      }
     } catch (e) {}
   }
   function readPos() {
@@ -353,6 +363,7 @@
       (t === 'tv' ? '&season=' + encodeURIComponent(p[2] || '1') + '&episode=' + encodeURIComponent(p[3] || '1') : '') +
       '&title=' + encodeURIComponent(p.slice(4).join(':') || '');
     if (P.apiOverride) url += '&api=' + encodeURIComponent(P.apiOverride);
+    if (P.npid) url += '&pid=' + encodeURIComponent(P.npid);
     location.replace(url);
   }
 
@@ -379,6 +390,11 @@
   video.addEventListener('ended', function () {
     ended = true;
     clearPos();
+    if (P.pid) {
+      // Sentinel the app reads as "finished": moves the title to Watched.
+      try { localStorage.setItem('verge-progress-' + P.pid, '-1'); } catch (e) {}
+      try { localStorage.removeItem('verge-dur-' + P.pid); } catch (e) {}
+    }
     spinner(false); bigPause(false);
     var hint = 'Press <b>BACK</b> to exit';
     if (P.next) hint = '<b>OK</b> play next episode &nbsp;·&nbsp; <b>BACK</b> exit';

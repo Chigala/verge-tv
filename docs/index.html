@@ -259,9 +259,9 @@
     <h1 id="e-title" class="clamp2"></h1>
     <div class="meta" id="e-meta"></div>
     <div id="e-over"></div>
-    <div class="btns"><div class="btn primary focus" id="e-play">▶ Watch episode</div></div>
+    <div class="btns"><div class="btn primary focus" id="e-play">▶ Watch episode</div><div class="btn" id="e-native">Native player</div></div>
   </div>
-  <div class="keys"><span class="key">OK</span>watch episode<span class="key">◀ ▶</span>previous / next episode<span class="key">BACK</span>close</div>
+  <div class="keys"><span class="key">OK</span>watch episode<span class="key">▲ ▼</span>player option<span class="key">◀ ▶</span>previous / next episode<span class="key">BACK</span>close</div>
 </div>
 
 <div id="search" class="screen">
@@ -873,6 +873,7 @@
       var pos = readProgress(progressIdFor(d));
       addBtn(pos >= 30 ? '▶ Resume · ' + fmtTime(pos) : '▶  Watch', true, function () { playMedia(d); });
       addBtn('Backup player', false, function () { playMedia(d, null, null, null, 'alt'); });
+      addBtn('Native player', false, function () { playNative(d); });
     }
     if (seasons.length) addBtn('Episodes', true, function () { det.z = det.zones[seasonZone + 1].els.length ? seasonZone + 1 : seasonZone; paintDetails(); });
     if (d.info) addBtn('More info', !hasPlayer && !seasons.length, function () { showQR(d.info, 'Scan for more info', d.t); });
@@ -1062,10 +1063,11 @@
   }
 
   /* ================= episode ================= */
-  var epi = null;
+  var epi = null, epiBtn = 0;
   function openEpisode(d, season, ep) {
     if (screen !== 'epi') overlayFrom = screen;
     epi = { d: d, season: season, i: season.eps.indexOf(ep) };
+    epiBtn = 0;
     paintEpisode();
     show('epi');
   }
@@ -1077,6 +1079,10 @@
     $('e-over').textContent = ep.o || 'No description yet.';
     var pos = readProgress(progressIdFor(epi.d, epi.season.n, ep.n));
     $('e-play').textContent = pos >= 30 ? '▶ Resume · ' + fmtTime(pos) : '▶ Watch episode';
+    $('e-native').style.display = trailerApi ? '' : 'none';
+    if (!trailerApi) epiBtn = 0;
+    $('e-play').className = 'btn primary' + (epiBtn === 0 ? ' focus' : '');
+    $('e-native').className = 'btn' + (epiBtn === 1 ? ' focus' : '');
     still.className = 'still';
     still.removeAttribute('src');
     var src = ep.s ? ep.s.replace('/w300/', '/w1280/') : epi.d.b;
@@ -1084,10 +1090,14 @@
   }
   function episodeKey(k) {
     var n = epi.season.eps.length;
-    if (k === K.OK) { playEpisode(); return true; }
+    if (k === K.UP || k === K.DOWN) {
+      if (trailerApi) { epiBtn = epiBtn === 0 ? 1 : 0; paintEpisode(); }
+      return true;
+    }
+    if (k === K.OK) { if (epiBtn === 1) playNativeEpisode(); else playEpisode(); return true; }
     if (k === K.LEFT && epi.i > 0) epi.i--;
     else if (k === K.RIGHT && epi.i < n - 1) epi.i++;
-    else return k === K.UP || k === K.DOWN;
+    else return false;
     paintEpisode();
     // Keep the Episodes row in step, so BACK lands on the episode last shown.
     for (var z = 0; z < det.zones.length; z++)
@@ -1101,7 +1111,13 @@
     var ep = epi.season.eps[epi.i];
     playMedia(epi.d, epi.season.n, ep.n, epi.season.nm + ' · Episode ' + ep.n + (ep.t ? ' · ' + ep.t : ''));
   }
+  function playNativeEpisode() {
+    if (!epi) return;
+    var ep = epi.season.eps[epi.i];
+    playNative(epi.d, epi.season.n, ep.n, epi.season.nm + ' · Episode ' + ep.n + (ep.t ? ' · ' + ep.t : ''));
+  }
   $('e-play').onclick = playEpisode;
+  $('e-native').onclick = playNativeEpisode;
 
   /* ================= search ================= */
   var KB = ['abcdef', 'ghijkl', 'mnopqr', 'stuvwx', 'yz1234', '567890'];
@@ -1323,6 +1339,33 @@
     req.send();
   }
 
+  // The native player is a full-page navigation (native.html), so stash where
+  // to return to plus the ids the app needs to fold playback progress back
+  // into Continue Watching when the app reboots (see reconcileNativeProgress).
+  function playNative(d, season, episode, episodeLabel) {
+    if (!trailerApi || !d.tm) return;
+    var isEp = season != null;
+    var pid = progressIdFor(d, season, episode);
+    var url = 'native.html?type=' + (isEp ? 'tv' : 'movie') +
+      '&tmdb=' + encodeURIComponent(d.tm) +
+      '&title=' + encodeURIComponent(d.t + (episodeLabel ? ' · ' + episodeLabel : '')) +
+      '&pid=' + encodeURIComponent(pid);
+    if (isEp) url += '&season=' + season + '&episode=' + episode;
+    var pos = readProgress(pid);
+    if (pos >= 30) url += '&startAt=' + Math.floor(pos);
+    if (isEp && epi && epi.season && epi.season.n === season && epi.i + 1 < epi.season.eps.length) {
+      var nx = epi.season.eps[epi.i + 1];
+      url += '&next=' + encodeURIComponent('tv:' + d.tm + ':' + season + ':' + nx.n + ':' + (nx.t || ('Episode ' + nx.n))) +
+        '&npid=' + encodeURIComponent(progressIdFor(d, season, nx.n));
+    }
+    try {
+      sessionStorage.setItem('verge-player-return', JSON.stringify({
+        it: det.it, nPid: pid, nSe: isEp ? season : null, nEp: isEp ? episode : null, nLabel: episodeLabel || ''
+      }));
+    } catch (e) {}
+    location.href = url;
+  }
+
   /* ================= trailer web page ================= */
   var webOvT, webWaitT, webStatusT, webPollT = 0, webBaseUrl = '', webOrigin = '', webProgress = 0,
       webDuration = 0, webPaused = true, webApiReady = false, webProgressKey = '',
@@ -1538,10 +1581,30 @@
     try {
       var saved = JSON.parse(raw);
       if (!saved.it) return false;
+      if (saved.nPid) reconcileNativeProgress(saved);
       stack = [{ s: 'home' }];
       openDetails(saved.it);
       return true;
     } catch (e2) { return false; }
+  }
+  // native.html mirrors playback into verge-progress-<pid> (seconds, or -1
+  // once finished) and verge-dur-<pid>; fold that into the watch log so
+  // Continue Watching and Watched reflect native plays too.
+  function reconcileNativeProgress(saved) {
+    var it = saved.it;
+    if (!it || !it.id) return;
+    var pos = readProgress(saved.nPid);
+    if (pos < 0) {
+      markWatchedWatch(saved.nPid);
+      try { localStorage.removeItem('verge-progress-' + saved.nPid); } catch (e) {}
+      try { localStorage.removeItem('verge-dur-' + saved.nPid); } catch (e) {}
+      return;
+    }
+    if (pos < 30) return;
+    var dur = 0;
+    try { dur = parseFloat(localStorage.getItem('verge-dur-' + saved.nPid)) || 0; } catch (e) {}
+    upsertWatch(saved.nPid, { k: it.k, tm: String(it.id).slice(1), t: it.t, y: it.y, p: it.p, b: it.b },
+      saved.nSe, saved.nEp, saved.nLabel, pos, dur);
   }
   function webKey(k) {
     if (k === K.STOP) { closeWebPage(); return true; }
