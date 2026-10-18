@@ -1393,6 +1393,25 @@
     else url += (url.indexOf('?') >= 0 ? '&' : '?') + 'startAt=' + Math.floor(seconds);
     return url + hash;
   }
+  // cinesrc reads ?subtitles=off|auto only at player boot — there is no
+  // runtime command — so toggling subtitles means reloading the player with
+  // the param flipped (resume-by-command restores the position afterwards).
+  function webUrlSubs(url, mode) {
+    if (/[?&]subtitles=/.test(url)) return url.replace(/([?&])subtitles=[^&#]*/i, '$1subtitles=' + mode);
+    return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'subtitles=' + mode;
+  }
+  function readSubsPref() {
+    try { return localStorage.getItem('verge-cinesrc-subs') === 'auto' ? 'auto' : 'off'; } catch (e) { return 'off'; }
+  }
+  function toggleWebSubtitles() {
+    if (webSrc !== 'alt') return;
+    var mode = readSubsPref() === 'off' ? 'auto' : 'off';
+    try { localStorage.setItem('verge-cinesrc-subs', mode); } catch (e) {}
+    toast(mode === 'auto' ? 'Subtitles on — reloading…' : 'Subtitles off — reloading…');
+    saveWebProgress();
+    playWebPage(webUrlSubs(webBaseUrl, mode), $('web-title').textContent, webD, webPid,
+      webSe != null ? { se: webSe, ep: webEp, label: webLabel } : null, webSrc);
+  }
   function webOriginOf(url) {
     var a = document.createElement('a'); a.href = url;
     return a.protocol && a.host ? a.protocol + '//' + a.host : '';
@@ -1464,6 +1483,7 @@
     // Chained "up next" playback starts while this screen is already showing;
     // keep the page that was under the player so BACK still lands there.
     if (screen !== 'webs') overlayFrom = screen;
+    if ((src || '') === 'alt') url = webUrlSubs(url, readSubsPref());   // honor the subtitle preference
     webBaseUrl = url;
     webOrigin = webOriginOf(url);
     webProgressKey = 'verge-progress-' + (progressId || d.imdb || d.tm || d.t);
@@ -1494,7 +1514,7 @@
     hideNextUp();
     $('web-title').textContent = title;
     $('web-help').innerHTML = webSrc === 'alt'
-      ? '<span class="key">OK</span>play/pause<span class="key">◀ ▶</span>seek<span class="key">BACK</span>close'
+      ? '<span class="key">OK</span>play/pause<span class="key">◀ ▶</span>seek<span class="key">▲</span>subtitles<span class="key">BACK</span>close'
       : '<span class="key">OK</span>play/pause<span class="key">◀ ▶</span>seek<span class="key">▼</span>fullscreen<span class="key">BACK</span>close';
     paintWebProgress();
     $('web-ov').className = 'ov';
@@ -1680,7 +1700,11 @@
       webResumeAt = 0;   // a manual seek supersedes the pending resume
       postWebCommand('seek', { time: webProgress });
     }
-    else if (k === K.UP) postWebCommand('getStatus');
+    else if (k === K.UP) {
+      // On the backup, UP toggles subtitles (boot-time param, so it reloads
+      // and resumes). On the primary it keeps the legacy status refresh.
+      if (webSrc === 'alt') toggleWebSubtitles(); else postWebCommand('getStatus');
+    }
     else return false;
     pokeWebOverlay();
     return true;
