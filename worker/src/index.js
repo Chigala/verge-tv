@@ -131,6 +131,14 @@ function configuredPlayerUrl(request, env) {
       }
     }
   }
+  // cinesrc player knobs (its embed reads these query params): subtitles off
+  // by default — the auto-picked track is often wrong for the title — and no
+  // internal auto-next, so the app's own up-next flow owns episode chaining
+  // and progress tracking instead of fighting the player's in-frame jumps.
+  if (destination.hostname === 'cinesrc.st') {
+    destination.searchParams.set('subtitles', 'off');
+    destination.searchParams.set('autonext', 'false');
+  }
   if (startAt) destination.searchParams.set('startAt', startAt);
   return destination;
 }

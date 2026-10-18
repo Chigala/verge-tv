@@ -197,7 +197,7 @@ test('supports explicit season and episode placeholders', async () => {
   assert.deepEqual(await response.json(), { url: 'https://player.example.invalid/tv/66732/5/3' });
 });
 
-test('cinesrc.st TV players take season and episode as query params', async () => {
+test('cinesrc.st players take episodes as query params, subtitles off, no autonext', async () => {
   const env = {
     ACCESS_PATH: 'private_test_path_1234',
     APP_ORIGIN: 'https://chigala.github.io',
@@ -208,14 +208,14 @@ test('cinesrc.st TV players take season and episode as query params', async () =
     { headers: { Origin: env.APP_ORIGIN } },
   ), env);
   assert.equal(tv.status, 200);
-  assert.deepEqual(await tv.json(), { url: 'https://cinesrc.st/embed/tv/66732?autoplay=1&s=5&e=3' });
+  assert.deepEqual(await tv.json(), { url: 'https://cinesrc.st/embed/tv/66732?autoplay=1&s=5&e=3&subtitles=off&autonext=false' });
 
   const movie = await handleRequest(new Request(
     'https://worker.example.invalid/private_test_path_1234/player?type=movie&tmdb=289',
     { headers: { Origin: env.APP_ORIGIN } },
   ), env);
   assert.equal(movie.status, 200);
-  assert.deepEqual(await movie.json(), { url: 'https://cinesrc.st/embed/movie/289?autoplay=1' });
+  assert.deepEqual(await movie.json(), { url: 'https://cinesrc.st/embed/movie/289?autoplay=1&subtitles=off&autonext=false' });
 });
 
 test('finds an escaped HLS URL without contacting it', () => {
