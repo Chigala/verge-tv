@@ -151,7 +151,7 @@ async function main() {
   await evaluate("document.querySelector('#share').click()");
   await waitFor("document.querySelector('#share-overlay').classList.contains('on')", 'phone share overlay');
   const shareText = await evaluate("document.querySelector('#share-text').textContent");
-  assert(shareText.includes('verge-vidaa-bridge-share/v1'));
+  assert(shareText.includes('verge-vidaa-bridge-share/v2'));
   assert(!shareText.includes('192.168.'), 'QR share must not contain LAN addresses');
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{keyCode:27,bubbles:true}));");
   assert.strictEqual(await evaluate("document.querySelector('#share-overlay').classList.contains('on')"), false, 'Back should close QR sharing');

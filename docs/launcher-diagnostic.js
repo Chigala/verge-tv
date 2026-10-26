@@ -161,40 +161,50 @@
     if (!bridges) return null;
     var candidates = [];
     var pattern = /hiutils|vowos|omi|oipf|proprietary|request|appmanager|dial/i;
-    var relevantMethod = /application|launch|start|create|destroy|owner|source|input|request|memory|free/i;
+    var relevantMethod = /application|launch|start|destroy|owner|source|input|request|memory|free|createApplication/i;
     for (var i = 0; i < bridges.globals.length; i += 1) {
       var item = bridges.globals[i];
       if (!pattern.test(item.name)) continue;
-      var candidate = { name: item.name, type: item.type || 'skipped' };
-      if (item.function) {
-        candidate.function = {
-          arity: item.function.arity,
-          source: sanitize(item.function.source, 500)
-        };
-      }
-      if (item.keys) candidate.keys = item.keys.slice(0, 40);
-      if (item.children) candidate.children = item.children;
-      if (item.skipped) candidate.skipped = item.skipped;
+      var candidate = { name: sanitize(item.name, 100), type: item.type || 'skipped' };
+      if (item.function) candidate.arity = item.function.arity;
+      if (item.skipped) candidate.skipped = sanitize(item.skipped, 100);
       candidates.push(candidate);
     }
     var oipf = bridges.oipf || { available: false };
     var sharedOipf = { available: oipf.available, managerMethods: [] };
     if (oipf.managerMethods) {
       for (var j = 0; j < oipf.managerMethods.length; j += 1) {
-        if (relevantMethod.test(oipf.managerMethods[j])) sharedOipf.managerMethods.push(oipf.managerMethods[j]);
+        if (relevantMethod.test(oipf.managerMethods[j])) sharedOipf.managerMethods.push(sanitize(oipf.managerMethods[j], 100));
       }
     }
-    if (oipf.error) sharedOipf.error = oipf.error;
-    return {
-      schema: 'verge-vidaa-bridge-share/v1',
+    if (oipf.error) sharedOipf.error = sanitize(oipf.error, 160);
+    var proprietary = bridges.proprietary || { available: false, names: [] };
+    var dial = bridges.dial || { available: false, enabled: null, appNames: [] };
+    var shared = {
+      schema: 'verge-vidaa-bridge-share/v2',
       userAgent: sanitize(report.context.userAgent, 240),
       versions: bridges.versions,
       launchRelated: bridges.launchRelated,
-      proprietary: bridges.proprietary,
+      proprietary: { available: proprietary.available, returned: proprietary.returned, names: (proprietary.names || []).slice(0, 30) },
       oipf: sharedOipf,
-      dial: bridges.dial,
+      dial: { available: dial.available, enabled: dial.enabled, appNames: (dial.appNames || []).slice(0, 12) },
       candidates: candidates
     };
+
+    // QR v2 is deliberately summary-only. Shed lower-priority lists rather than
+    // exceeding the renderer's reliable single-code capacity on unusual TVs.
+    var budget = 2250;
+    function trimLowestPriority() {
+      if (shared.dial.appNames.length) { shared.dial.appNames.pop(); return true; }
+      if (shared.proprietary.names.length) { shared.proprietary.names.pop(); return true; }
+      if (shared.userAgent) { shared.userAgent = ''; return true; }
+      if (shared.oipf.managerMethods.length > 12) { shared.oipf.managerMethods.pop(); return true; }
+      if (shared.candidates.length > 12) { shared.candidates.pop(); return true; }
+      if (shared.launchRelated.length > 12) { shared.launchRelated.pop(); return true; }
+      return false;
+    }
+    while (JSON.stringify(shared).length > budget && trimLowestPriority()) {}
+    return shared;
   }
 
   function makeReport() {
@@ -600,7 +610,7 @@
       var shared = bridgeShare(report);
       if (!shared) { toast('Wait for the bridge scan to finish.', true); return; }
       var json = JSON.stringify(shared);
-      var text = 'VERGE VIDAA bridge share v1\n' + json;
+      var text = 'VERGE VIDAA bridge share v2\n' + json;
       $('share-text').textContent = json;
       $('share-qr').textContent = 'Preparing QR…';
       $('share-overlay').className = 'on';
