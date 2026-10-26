@@ -161,23 +161,37 @@
     if (!bridges) return null;
     var candidates = [];
     var pattern = /hiutils|vowos|omi|oipf|proprietary|request|appmanager|dial/i;
+    var relevantMethod = /application|launch|start|create|destroy|owner|source|input|request|memory|free/i;
     for (var i = 0; i < bridges.globals.length; i += 1) {
       var item = bridges.globals[i];
       if (!pattern.test(item.name)) continue;
       var candidate = { name: item.name, type: item.type || 'skipped' };
-      if (item.function) candidate.function = item.function;
-      if (item.keys) candidate.keys = item.keys;
+      if (item.function) {
+        candidate.function = {
+          arity: item.function.arity,
+          source: sanitize(item.function.source, 500)
+        };
+      }
+      if (item.keys) candidate.keys = item.keys.slice(0, 40);
       if (item.children) candidate.children = item.children;
       if (item.skipped) candidate.skipped = item.skipped;
       candidates.push(candidate);
     }
+    var oipf = bridges.oipf || { available: false };
+    var sharedOipf = { available: oipf.available, managerMethods: [] };
+    if (oipf.managerMethods) {
+      for (var j = 0; j < oipf.managerMethods.length; j += 1) {
+        if (relevantMethod.test(oipf.managerMethods[j])) sharedOipf.managerMethods.push(oipf.managerMethods[j]);
+      }
+    }
+    if (oipf.error) sharedOipf.error = oipf.error;
     return {
       schema: 'verge-vidaa-bridge-share/v1',
-      userAgent: report.context.userAgent,
+      userAgent: sanitize(report.context.userAgent, 240),
       versions: bridges.versions,
       launchRelated: bridges.launchRelated,
       proprietary: bridges.proprietary,
-      oipf: bridges.oipf,
+      oipf: sharedOipf,
       dial: bridges.dial,
       candidates: candidates
     };

@@ -51,6 +51,30 @@ assert.strictEqual(shared.candidates[0].name, 'HiUtils_createRequest');
 assert(!JSON.stringify(shared).includes('DeviceID'), 'QR sharing should omit unrelated sensitive globals');
 assert.strictEqual(diagnostic.bridgeShare({ bridges: null }), null);
 
+const domNoise = ['accessKey', 'after', 'align', 'animate', 'append', 'ariaAtomic'];
+for (let i = 0; i < 500; i += 1) domNoise.push('domProperty' + i);
+const noisyReport = {
+  context: { userAgent: 'Mozilla/5.0 (Linux armv7l) AppleWebKit/537.36 Chromium/111' },
+  bridges: {
+    globals: [
+      { name: 'HiUtils_createRequest', type: 'function', function: { arity: 2, source: 'function () {}' } },
+      { name: 'vowOS', type: 'object', keys: domNoise.concat('launchApplication') }
+    ],
+    versions: { Hisense_GetOSVersion: 'U09.09' },
+    launchRelated: [],
+    proprietary: { available: true, returned: 'object', names: [] },
+    oipf: { available: true, managerMethods: domNoise.concat(['createApplication', 'getOwnerApplication']) },
+    dial: { available: false, enabled: null, appNames: [] }
+  }
+};
+const compactShare = diagnostic.bridgeShare(noisyReport);
+assert(compactShare.oipf.managerMethods.includes('createApplication'), 'application methods must remain in the QR report');
+assert(compactShare.oipf.managerMethods.includes('getOwnerApplication'), 'owner methods must remain in the QR report');
+assert(!compactShare.oipf.managerMethods.includes('accessKey'), 'DOM properties must not crowd out useful QR data');
+assert(!compactShare.oipf.managerMethods.some(name => /^domProperty/.test(name)), 'generated DOM noise must be excluded');
+assert.strictEqual(noisyReport.bridges.oipf.managerMethods.length, 508, 'sharing must not alter the full diagnostic report');
+assert(('VERGE VIDAA bridge share v1\n' + JSON.stringify(compactShare)).length < 2400, 'representative bridge share must fit one QR');
+
 for (const name of ['launchApp', 'launch_app', 'startApp', 'changeSource', 'select_source']) {
   assert(diagnostic.LAUNCH_NAME.test(name), name + ' should be launch-related');
 }
