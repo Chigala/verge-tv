@@ -1386,22 +1386,35 @@
       webPid = '', webD = null, webSe = null, webEp = null, webLabel = '',
       nextUp = null, nextUpT = 0, nextUpN = 0;
   function webUrlAt(url, seconds) {
-    if (!seconds || seconds < 5) return url;
+    var cinesrc = /^https?:\/\/[^/]*cinesrc\./i.test(url);
+    if (!cinesrc && (!seconds || seconds < 5)) return url;
     var hash = '', at = url.indexOf('#');
     if (at >= 0) { hash = url.slice(at); url = url.slice(0, at); }
-    if (/[?&]startAt=/.test(url)) url = url.replace(/([?&])startAt=[^&#]*/i, '$1startAt=' + Math.floor(seconds));
-    else url += (url.indexOf('?') >= 0 ? '&' : '?') + 'startAt=' + Math.floor(seconds);
+    if (cinesrc) {
+      // cinesrc reads the resume position from ?t= at boot. Disable its
+      // click-to-continue prompt too: a TV remote cannot dismiss that gate.
+      if (/[?&]continueprompt=/.test(url)) url = url.replace(/([?&])continueprompt=[^&#]*/i, '$1continueprompt=false');
+      else url += (url.indexOf('?') >= 0 ? '&' : '?') + 'continueprompt=false';
+      if (seconds && seconds >= 5) {
+        if (/[?&]t=/.test(url)) url = url.replace(/([?&])t=[^&#]*/i, '$1t=' + Math.floor(seconds));
+        else url += '&t=' + Math.floor(seconds);
+      }
+    } else {
+      if (/[?&]startAt=/.test(url)) url = url.replace(/([?&])startAt=[^&#]*/i, '$1startAt=' + Math.floor(seconds));
+      else url += (url.indexOf('?') >= 0 ? '&' : '?') + 'startAt=' + Math.floor(seconds);
+    }
     return url + hash;
   }
   // cinesrc reads ?subtitles=off|auto only at player boot — there is no
   // runtime command — so toggling subtitles means reloading the player with
-  // the param flipped (resume-by-command restores the position afterwards).
+  // the param flipped. webUrlAt puts the position directly in that new URL;
+  // the resume seek below remains only as a backup for event-capable webviews.
   function webUrlSubs(url, mode) {
     if (/[?&]subtitles=/.test(url)) return url.replace(/([?&])subtitles=[^&#]*/i, '$1subtitles=' + mode);
     return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'subtitles=' + mode;
   }
   function readSubsPref() {
-    try { return localStorage.getItem('verge-cinesrc-subs') === 'auto' ? 'auto' : 'off'; } catch (e) { return 'off'; }
+    try { return localStorage.getItem('verge-cinesrc-subs') === 'off' ? 'off' : 'auto'; } catch (e) { return 'auto'; }
   }
   function toggleWebSubtitles() {
     if (webSrc !== 'alt') return;
@@ -1502,10 +1515,9 @@
     webApiReady = false;
     webCmdShape = '';
     webEverPlayed = false;
-    // cinesrc ignores the ?startAt= URL param, so for it the saved position is
-    // applied by a seek command once the player signals it exists (see the
-    // message handler). Until that seek lands, early timeupdates near zero are
-    // noise and must never overwrite the saved progress.
+    // cinesrc receives the saved position through ?t= in its boot URL. Keep a
+    // command-based resume as a backup, and until that seek lands ignore early
+    // timeupdates near zero so they cannot wipe the saved progress.
     webResumeAt = webProgress >= 5 ? webProgress : 0;
     webResumeSentAt = 0;
     webLastSavedAt = 0;
@@ -1530,7 +1542,20 @@
     // The embed only volunteers status when it feels like it; keep asking so
     // duration and the progress bar stay honest.
     webPollT = setInterval(function () {
-      if (screen === 'webs' && !nextUp) postWebCommand('getStatus');
+      if (screen !== 'webs' || nextUp) return;
+      postWebCommand('getStatus');
+      // Some VIDAA webviews never deliver player events. In that black-box
+      // mode, maintain an approximate clock so subtitle reloads and Continue
+      // Watching still resume from the current position rather than zero.
+      // Any real playback event disables this fallback permanently.
+      if (webSrc === 'alt' && !webPaused && webCmdShape === '' && !webEverPlayed) {
+        webProgress += 3;
+        paintWebProgress();
+        if (Date.now() - webLastSavedAt > 5000) {
+          webLastSavedAt = Date.now();
+          saveWebProgress();
+        }
+      }
     }, 3000);
     webWaitT = setTimeout(function () {
       if (screen !== 'webs' || webApiReady) return;
@@ -1771,8 +1796,8 @@
         webCmdShape = 'cinesrc';
         clearTimeout(webWaitT);
       }
-      // cinesrc ignores ?startAt=, so the saved position goes out as a seek
-      // command on the first lifecycle event (whichever arrives first).
+      // The boot URL's ?t= is the primary resume mechanism. Repeat it as a
+      // seek on the first lifecycle event as a backup for event-capable clients.
       if (webResumeAt && !webResumeSentAt && (cEv === 'ready' || cEv === 'play' || cEv === 'loadedmetadata')) {
         webResumeSentAt = Date.now();
         postWebCommand('seek', { time: webResumeAt });
