@@ -37,7 +37,7 @@
     border-radius: .6vw; background: rgba(255,255,255,.1); color: var(--muted); font-size: 1.05vw; border: .2vw solid transparent; }
   #nb-search svg { width: 1.15vw; height: 1.15vw; margin-right: .7vw; fill: currentColor; }
   #nb-search.focus { background: var(--focus); color: #000; }
-  .nb { padding: .5vw 1.25vw; border-radius: 99vw; color: var(--muted); font-weight: 700; margin-right: .4vw; font-size: 1.15vw; border: .2vw solid transparent; }
+  .nb { padding: .5vw 1.25vw; border-radius: 99vw; color: var(--muted); font-weight: 700; margin-right: .4vw; font-size: 1.15vw; border: .2vw solid transparent; text-decoration: none; }
   .nb.sel { color: var(--text); border-color: rgba(255,255,255,.28); }
   .nb.focus { background: var(--focus); color: #000; border-color: var(--focus); }
   #clock { margin-left: auto; color: var(--muted); font-size: 1.2vw; }
@@ -226,6 +226,7 @@
     <div id="brand">Movie<span>.</span>Catalog</div>
     <div id="nb-search"><svg viewBox="0 0 24 24"><path d="M10 2a8 8 0 0 1 6.32 12.9l5.39 5.4-1.41 1.4-5.4-5.39A8 8 0 1 1 10 2zm0 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12z"/></svg>Search movies &amp; series</div>
     <div id="tabs"></div>
+    <a id="nb-diagnostic" class="nb" href="launcher-diagnostic.html" title="Read-only TV launcher diagnostic">Diagnostic</a>
     <div id="clock"></div>
   </div></div>
 </div>
@@ -681,6 +682,7 @@
       navEls.push(b);
       tabState.push({ row: 0, cols: [] });
     }
+    navEls.push($('nb-diagnostic'));
   }
   function paintNav() {
     for (var i = 0; i < navEls.length; i++) {
@@ -777,6 +779,7 @@
       else if (k === K.DOWN) { if (rowEls.length) zone = 'rows'; }
       else if (k === K.OK) {
         if (navIdx === 0) { openSearch(); return true; }
+        if (navIdx === navEls.length - 1) { window.location.href = 'launcher-diagnostic.html'; return true; }
         if (navIdx - 1 !== tabIdx) { heroItem = null; buildTab(navIdx - 1); }
         zone = 'rows';
       }
