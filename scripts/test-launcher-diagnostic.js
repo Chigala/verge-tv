@@ -31,6 +31,26 @@ const dial = diagnostic.dialSummary(JSON.stringify({ enable: true, app_list: ['N
 assert.deepStrictEqual(dial, { available: true, enabled: true, appNames: ['Netflix', 'YouTube'] });
 assert.strictEqual(diagnostic.dialSummary('bad').available, false);
 
+const shared = diagnostic.bridgeShare({
+  context: { userAgent: 'test-TV' },
+  bridges: {
+    globals: [
+      { name: 'HiUtils_createRequest', type: 'function', function: { arity: 2, source: 'function () {}' } },
+      { name: 'Hisense_GetModelName', type: 'function', function: { arity: 0, source: 'function () {}' } },
+      { name: 'Hisense_GetDeviceID', skipped: 'sensitive-looking name; value not read' }
+    ],
+    versions: { Hisense_GetOSVersion: 'test' },
+    launchRelated: [],
+    proprietary: { available: false, names: [] },
+    oipf: { available: false, managerMethods: [] },
+    dial: { available: true, enabled: true, appNames: ['Netflix'] }
+  }
+});
+assert.strictEqual(shared.candidates.length, 1, 'QR sharing should retain generic bridge candidates');
+assert.strictEqual(shared.candidates[0].name, 'HiUtils_createRequest');
+assert(!JSON.stringify(shared).includes('DeviceID'), 'QR sharing should omit unrelated sensitive globals');
+assert.strictEqual(diagnostic.bridgeShare({ bridges: null }), null);
+
 for (const name of ['launchApp', 'launch_app', 'startApp', 'changeSource', 'select_source']) {
   assert(diagnostic.LAUNCH_NAME.test(name), name + ' should be launch-related');
 }

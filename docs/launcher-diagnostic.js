@@ -156,6 +156,33 @@
     return result;
   }
 
+  function bridgeShare(report) {
+    var bridges = report && report.bridges;
+    if (!bridges) return null;
+    var candidates = [];
+    var pattern = /hiutils|vowos|omi|oipf|proprietary|request|appmanager|dial/i;
+    for (var i = 0; i < bridges.globals.length; i += 1) {
+      var item = bridges.globals[i];
+      if (!pattern.test(item.name)) continue;
+      var candidate = { name: item.name, type: item.type || 'skipped' };
+      if (item.function) candidate.function = item.function;
+      if (item.keys) candidate.keys = item.keys;
+      if (item.children) candidate.children = item.children;
+      if (item.skipped) candidate.skipped = item.skipped;
+      candidates.push(candidate);
+    }
+    return {
+      schema: 'verge-vidaa-bridge-share/v1',
+      userAgent: report.context.userAgent,
+      versions: bridges.versions,
+      launchRelated: bridges.launchRelated,
+      proprietary: bridges.proprietary,
+      oipf: bridges.oipf,
+      dial: bridges.dial,
+      candidates: candidates
+    };
+  }
+
   function makeReport() {
     return {
       schema: 'verge-vidaa-launch-diagnostic/v1',
@@ -535,6 +562,52 @@
       return JSON.stringify(report, null, 2);
     }
 
+    function closeShare() {
+      $('share-overlay').className = '';
+      $('share').focus();
+    }
+
+    function renderShareQr(text) {
+      if (!$('share-overlay').className) return;
+      $('share-qr').innerHTML = '';
+      try {
+        new root.QRCode($('share-qr'), {
+          text: text,
+          width: 320,
+          height: 320,
+          correctLevel: root.QRCode.CorrectLevel.L
+        });
+      } catch (e) {
+        $('share-qr').textContent = 'QR unavailable. Photograph the text below.';
+      }
+    }
+
+    function showShare() {
+      var shared = bridgeShare(report);
+      if (!shared) { toast('Wait for the bridge scan to finish.', true); return; }
+      var json = JSON.stringify(shared);
+      var text = 'VERGE VIDAA bridge share v1\n' + json;
+      $('share-text').textContent = json;
+      $('share-qr').textContent = 'Preparing QR…';
+      $('share-overlay').className = 'on';
+      $('share-close').focus();
+      if (text.length > 2400) {
+        $('share-qr').textContent = 'Details are too large for one QR. Photograph the text below.';
+        return;
+      }
+      if (root.QRCode) { renderShareQr(text); return; }
+      if (showShare.loading) return;
+      showShare.loading = true;
+      var script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+      script.onload = function () { showShare.loading = false; renderShareQr(text); };
+      script.onerror = function () {
+        showShare.loading = false;
+        $('share-qr').textContent = 'QR could not load. Photograph the text below.';
+      };
+      document.head.appendChild(script);
+    }
+
     function copyText(text, successMessage) {
       function fallback() {
         var area = document.createElement('textarea');
@@ -612,13 +685,16 @@
     $('cdp').addEventListener('click', probeCdp);
     $('copy').addEventListener('click', function () { copyText(reportText(), 'Sanitized report copied.'); });
     $('download').addEventListener('click', downloadReport);
+    $('share').addEventListener('click', showShare);
+    $('share-close').addEventListener('click', closeShare);
     $('copy-lan').addEventListener('click', function () {
       copyText('curl http://<TV-IP>:9223/json/version\ncurl http://<TV-IP>:9223/json', 'Laptop CDP checks copied. Replace <TV-IP>.');
     });
     document.addEventListener('keydown', function (event) {
       var key = event.keyCode;
       if (key === 8 || key === 27 || key === 461 || key === 10009 || key === 10071) {
-        if (root.history.length > 1) root.history.back();
+        if ($('share-overlay').className) closeShare();
+        else if (root.history.length > 1) root.history.back();
         else root.location.href = 'index.html';
         event.preventDefault();
         return;
@@ -636,6 +712,7 @@
     sanitize: sanitize,
     appSummary: appSummary,
     dialSummary: dialSummary,
+    bridgeShare: bridgeShare,
     propertyNames: propertyNames,
     LAUNCH_NAME: LAUNCH_NAME,
     SENSITIVE_NAME: SENSITIVE_NAME

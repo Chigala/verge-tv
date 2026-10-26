@@ -148,13 +148,21 @@ async function main() {
   assert(!exportedText.includes('webSocketDebuggerUrl'), 'CDP socket URLs must not be exported');
   assert(!exportedText.includes('192.168.'), 'LAN addresses must not be exported');
 
+  await evaluate("document.querySelector('#share').click()");
+  await waitFor("document.querySelector('#share-overlay').classList.contains('on')", 'phone share overlay');
+  const shareText = await evaluate("document.querySelector('#share-text').textContent");
+  assert(shareText.includes('verge-vidaa-bridge-share/v1'));
+  assert(!shareText.includes('192.168.'), 'QR share must not contain LAN addresses');
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{keyCode:27,bubbles:true}));");
+  assert.strictEqual(await evaluate("document.querySelector('#share-overlay').classList.contains('on')"), false, 'Back should close QR sharing');
+
   await cdp('Emulation.setDeviceMetricsOverride', { width: 800, height: 900, deviceScaleFactor: 1, mobile: false });
   assert.strictEqual(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true, 'Narrow layout must not overflow horizontally');
   assert.strictEqual(await evaluate("getComputedStyle(document.querySelector('.grid')).gridTemplateColumns.split(' ').length"), 1);
 
   const appUrl = `http://127.0.0.1:${appPort}/index.html`;
   await cdp('Page.navigate', { url: appUrl });
-  await waitFor("location.pathname.endsWith('/index.html') && !!document.querySelector('#nb-diagnostic')", 'Verge home with diagnostic entry', 15000);
+  await waitFor("location.pathname.endsWith('/index.html') && document.querySelector('#tabs').children.length > 0 && !!document.querySelector('#rows .card')", 'Verge home with diagnostic entry', 15000);
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{keyCode:38,bubbles:true})); for(let i=0;i<20;i++) document.dispatchEvent(new KeyboardEvent('keydown',{keyCode:39,bubbles:true}));");
   assert.strictEqual(await evaluate("document.querySelector('#nb-diagnostic').classList.contains('focus')"), true, 'Diagnostic entry must be reachable with the TV remote');
   assert.strictEqual(await evaluate("document.querySelector('#nav .in').scrollWidth <= document.querySelector('#nav .in').clientWidth"), true, 'Top navigation must fit the TV screen');

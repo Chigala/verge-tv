@@ -39,7 +39,7 @@ def local_http_url(value):
         return None
 
 
-def http_get(url, timeout):
+def http_get(url, timeout, origin=None):
     safe_url = local_http_url(url)
     if not safe_url:
         return {"ok": False, "error": "Skipped non-local or non-HTTP metadata URL"}
@@ -48,12 +48,17 @@ def http_get(url, timeout):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
             return None
 
-    request = urllib.request.Request(safe_url, headers={"User-Agent": "Verge-ReadOnly-Diagnostic/1.0"})
+    request_headers = {"User-Agent": "Verge-ReadOnly-Diagnostic/1.0"}
+    if origin:
+        request_headers["Origin"] = origin
+    request = urllib.request.Request(safe_url, headers=request_headers)
     opener = urllib.request.build_opener(NoRedirect)
     try:
         with opener.open(request, timeout=timeout) as response:
             body = response.read(MAX_METADATA_BYTES + 1)
-            return {"ok": 200 <= response.status < 300, "status": response.status, "body": body[:MAX_METADATA_BYTES]}
+            app_url = local_http_url(response.headers.get("Application-URL", ""))
+            cors = clean(response.headers.get("Access-Control-Allow-Origin", "not supplied"), 60)
+            return {"ok": 200 <= response.status < 300, "status": response.status, "body": body[:MAX_METADATA_BYTES], "applicationUrl": app_url, "cors": cors}
     except urllib.error.HTTPError as error:
         return {"ok": False, "status": error.code, "error": "HTTP metadata request rejected"}
     except (urllib.error.URLError, TimeoutError, OSError) as error:
@@ -122,8 +127,10 @@ def inspect_dial(found, timeout):
         location = headers.get("location")
         app_url = local_http_url(headers.get("application-url", ""))
         print("Device " + str(index) + ":")
-        print("  DIAL application endpoint advertised: " + ("yes" if app_url else "no"))
         metadata = http_get(location, timeout)
+        if not app_url:
+            app_url = metadata.get("applicationUrl")
+        print("  DIAL application endpoint advertised: " + ("yes" if app_url else "no"))
         print("  Device metadata GET: " + (str(metadata.get("status")) if metadata.get("ok") else "unavailable"))
         if metadata.get("ok"):
             try:

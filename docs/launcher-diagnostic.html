@@ -115,6 +115,14 @@
   .help code { color: #d9e4f3; }
   #toast { min-height: 28px; margin-top: 12px; color: var(--green); font-size: .85em; }
   .footer { display: flex; justify-content: space-between; gap: 20px; margin-top: 22px; color: var(--muted); font-size: .76em; }
+  #share-overlay { position: fixed; inset: 0; z-index: 50; display: none; align-items: center; justify-content: center; padding: 3vh 3vw; background: rgba(4, 7, 12, .97); overflow: auto; }
+  #share-overlay.on { display: flex; }
+  .share-card { width: min(1050px, 94vw); max-height: 94vh; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--panel); overflow: auto; }
+  .share-card h2 { margin: 0 0 8px; }
+  .share-card p { color: var(--muted); }
+  #share-qr { width: 344px; height: 344px; margin: 16px auto; padding: 12px; background: #fff; color: #111; text-align: center; }
+  #share-qr img, #share-qr canvas { display: block; margin: 0 auto; }
+  #share-text { max-height: 22vh; margin: 12px 0; padding: 12px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 10px; background: #090e17; color: #cbd7e5; font-size: .68em; }
   @media (max-width: 900px) {
     #app { width: 92vw; padding-top: 24px; }
     .top { display: block; }
@@ -176,6 +184,7 @@
     <div class="panel-head">
       <h2>Result</h2>
       <div class="actions" style="margin-top:0">
+        <button id="share" class="action small" type="button">Share bridge details QR</button>
         <button id="copy" class="action small" type="button">Copy sanitized report</button>
         <button id="download" class="action small" type="button">Download JSON</button>
       </div>
@@ -192,14 +201,23 @@
   </section>
 
   <p class="help">
-    TV remote: arrow keys move, OK activates, BACK / ESC exits. Send Chigala the four metric values or the sanitized JSON.<br>
+    TV remote: arrow keys move, OK activates, BACK / ESC exits. Use Share bridge details QR to scan sanitized launcher details with a phone.<br>
     Laptop CDP check: <code>curl http://&lt;TV-IP&gt;:9223/json/version</code> then <code>curl http://&lt;TV-IP&gt;:9223/json</code>
   </p>
   <footer class="footer">
-    <span>No results leave this page unless you copy or download them.</span>
+    <span>No results leave this page unless you copy, download, or share them.</span>
     <span>Diagnostic v1 · no device identifiers exported</span>
   </footer>
 </main>
+<section id="share-overlay" role="dialog" aria-modal="true" aria-labelledby="share-title">
+  <div class="share-card">
+    <h2 id="share-title">Scan with your phone</h2>
+    <p>This QR contains only sanitized bridge names, signatures, versions and DIAL metadata. It is not uploaded.</p>
+    <div id="share-qr">Preparing QR…</div>
+    <pre id="share-text"></pre>
+    <button id="share-close" class="action primary" type="button">Close share</button>
+  </div>
+</section>
 <script src="launcher-diagnostic.js"></script>
 </body>
 </html>
