@@ -1571,7 +1571,9 @@
       // The backup never answered: offer the way out.
       $('web-help').innerHTML = '<span class="key">▼</span>open full-page player<span class="key">BACK</span>cancel';
       $('web-ov').className = 'ov';
-    }, 8000);
+      // MoviesAPI can spend a while finding a source before its first event.
+      // Give the primary 30 seconds; retain the shorter 8-second backup check.
+    }, webSrc === 'alt' ? 8000 : 30000);
     // The backup can answer yet sit on a click gate and never start. Give it
     // longer than a slow load, then offer the way out.
     webGateT = setTimeout(function () {
