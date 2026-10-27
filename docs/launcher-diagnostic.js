@@ -160,13 +160,24 @@
     var bridges = report && report.bridges;
     if (!bridges) return null;
     var candidates = [];
-    var pattern = /hiutils|vowos|omi|oipf|proprietary|request|appmanager|dial/i;
+    var pattern = /^(hiutils|vowos|omi_|opera_omi|createoipf|.*oipf.*|.*proprietary.*|.*request.*|.*appmanager.*|.*dial.*)/i;
+    var detailedObject = /^(vowos|vowoscontext|omi_platform|opera_omi|oipfobjectfactory)$/i;
     var relevantMethod = /application|launch|start|destroy|owner|source|input|request|memory|free|createApplication/i;
     for (var i = 0; i < bridges.globals.length; i += 1) {
       var item = bridges.globals[i];
       if (!pattern.test(item.name)) continue;
       var candidate = { name: sanitize(item.name, 100), type: item.type || 'skipped' };
       if (item.function) candidate.arity = item.function.arity;
+      if (detailedObject.test(item.name)) {
+        if (item.keys) candidate.keys = item.keys.slice(0, 30);
+        if (item.children) {
+          candidate.methods = [];
+          var childNames = Object.keys(item.children).sort();
+          for (var c = 0; c < childNames.length; c += 1) {
+            if (item.children[childNames[c]].type === 'function') candidate.methods.push(childNames[c]);
+          }
+        }
+      }
       if (item.skipped) candidate.skipped = sanitize(item.skipped, 100);
       candidates.push(candidate);
     }
@@ -181,7 +192,7 @@
     var proprietary = bridges.proprietary || { available: false, names: [] };
     var dial = bridges.dial || { available: false, enabled: null, appNames: [] };
     var shared = {
-      schema: 'verge-vidaa-bridge-share/v2',
+      schema: 'verge-vidaa-bridge-share/v3',
       userAgent: sanitize(report.context.userAgent, 240),
       versions: bridges.versions,
       launchRelated: bridges.launchRelated,
@@ -191,13 +202,23 @@
       candidates: candidates
     };
 
-    // QR v2 is deliberately summary-only. Shed lower-priority lists rather than
-    // exceeding the renderer's reliable single-code capacity on unusual TVs.
+    // QR v3 retains focused bridge methods but no nested object/source dumps.
+    // Shed lower-priority lists rather than exceeding reliable QR capacity.
     var budget = 2250;
     function trimLowestPriority() {
       if (shared.dial.appNames.length) { shared.dial.appNames.pop(); return true; }
       if (shared.proprietary.names.length) { shared.proprietary.names.pop(); return true; }
       if (shared.userAgent) { shared.userAgent = ''; return true; }
+      for (var i = 0; i < shared.candidates.length; i += 1) {
+        if (shared.candidates[i].keys && shared.candidates[i].keys.length) {
+          shared.candidates[i].keys.pop();
+          return true;
+        }
+        if (shared.candidates[i].methods && shared.candidates[i].methods.length > 12) {
+          shared.candidates[i].methods.pop();
+          return true;
+        }
+      }
       if (shared.oipf.managerMethods.length > 12) { shared.oipf.managerMethods.pop(); return true; }
       if (shared.candidates.length > 12) { shared.candidates.pop(); return true; }
       if (shared.launchRelated.length > 12) { shared.launchRelated.pop(); return true; }
@@ -610,7 +631,7 @@
       var shared = bridgeShare(report);
       if (!shared) { toast('Wait for the bridge scan to finish.', true); return; }
       var json = JSON.stringify(shared);
-      var text = 'VERGE VIDAA bridge share v2\n' + json;
+      var text = 'VERGE VIDAA bridge share v3\n' + json;
       $('share-text').textContent = json;
       $('share-qr').textContent = 'Preparing QR…';
       $('share-overlay').className = 'on';
