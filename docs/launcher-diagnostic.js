@@ -162,7 +162,7 @@
     var candidates = [];
     var pattern = /^(hiutils|vowos|omi_|opera_omi|createoipf|.*oipf.*|.*proprietary.*|.*request.*|.*appmanager.*|.*dial.*)/i;
     var detailedObject = /^(vowos|vowoscontext|omi_platform|opera_omi|oipfobjectfactory)$/i;
-    var relevantMethod = /application|launch|start|destroy|owner|source|input|request|memory|free|createApplication/i;
+    var relevantMethod = /application|launch|start|destroy|owner|source|input|request|memory|free|show|hide|widget/i;
     for (var i = 0; i < bridges.globals.length; i += 1) {
       var item = bridges.globals[i];
       if (!pattern.test(item.name)) continue;
@@ -176,23 +176,36 @@
           for (var c = 0; c < childNames.length; c += 1) {
             if (item.children[childNames[c]].type === 'function') candidate.methods.push(childNames[c]);
           }
+          if (item.children.createApplication) candidate.createApplicationArity = item.children.createApplication.arity;
         }
       }
       if (item.skipped) candidate.skipped = sanitize(item.skipped, 100);
       candidates.push(candidate);
     }
     var oipf = bridges.oipf || { available: false };
-    var sharedOipf = { available: oipf.available, managerMethods: [] };
+    var sharedOipf = {
+      available: oipf.available,
+      managerMethods: [],
+      getOwnerApplicationType: oipf.getOwnerApplicationType || 'missing',
+      ownerAvailable: oipf.ownerAvailable === true,
+      ownerMethods: []
+    };
     if (oipf.managerMethods) {
       for (var j = 0; j < oipf.managerMethods.length; j += 1) {
         if (relevantMethod.test(oipf.managerMethods[j])) sharedOipf.managerMethods.push(sanitize(oipf.managerMethods[j], 100));
       }
     }
+    if (oipf.ownerMethods) {
+      for (var k = 0; k < oipf.ownerMethods.length; k += 1) {
+        if (relevantMethod.test(oipf.ownerMethods[k])) sharedOipf.ownerMethods.push(sanitize(oipf.ownerMethods[k], 100));
+      }
+    }
     if (oipf.error) sharedOipf.error = sanitize(oipf.error, 160);
+    if (oipf.ownerError) sharedOipf.ownerError = sanitize(oipf.ownerError, 160);
     var proprietary = bridges.proprietary || { available: false, names: [] };
     var dial = bridges.dial || { available: false, enabled: null, appNames: [] };
     var shared = {
-      schema: 'verge-vidaa-bridge-share/v3',
+      schema: 'verge-vidaa-bridge-share/v4',
       userAgent: sanitize(report.context.userAgent, 240),
       versions: bridges.versions,
       launchRelated: bridges.launchRelated,
@@ -202,7 +215,7 @@
       candidates: candidates
     };
 
-    // QR v3 retains focused bridge methods but no nested object/source dumps.
+    // QR v4 retains focused bridge methods but no nested object/source dumps.
     // Shed lower-priority lists rather than exceeding reliable QR capacity.
     var budget = 2250;
     function trimLowestPriority() {
@@ -309,23 +322,40 @@
 
     function inspectOipf() {
       var result = { available: false, managerMethods: [] };
+      function collectMethods(value) {
+        var methods = propertyNames(value);
+        var prototype = value;
+        for (var depth = 0; depth < 6; depth += 1) {
+          try { prototype = Object.getPrototypeOf(prototype); } catch (e) { prototype = null; }
+          if (!prototype || prototype === Object.prototype) break;
+          var names = propertyNames(prototype);
+          for (var i = 0; i < names.length; i += 1) {
+            if (methods.indexOf(names[i]) === -1) methods.push(names[i]);
+          }
+        }
+        methods.sort();
+        return methods;
+      }
       try {
         if (!root.oipfObjectFactory || typeof root.oipfObjectFactory.createApplicationManagerObject !== 'function') {
           return result;
         }
         result.available = true;
         var manager = root.oipfObjectFactory.createApplicationManagerObject();
-        result.managerMethods = propertyNames(manager);
-        var prototype = manager;
-        for (var depth = 0; depth < 3; depth += 1) {
-          try { prototype = Object.getPrototypeOf(prototype); } catch (e) { prototype = null; }
-          if (!prototype || prototype === Object.prototype) break;
-          var names = propertyNames(prototype);
-          for (var i = 0; i < names.length; i += 1) {
-            if (result.managerMethods.indexOf(names[i]) === -1) result.managerMethods.push(names[i]);
+        result.managerMethods = collectMethods(manager);
+        result.getOwnerApplicationType = typeof manager.getOwnerApplication;
+        if (result.getOwnerApplicationType === 'function') {
+          try {
+            // Standard OIPF read-only lookup: never create/show/destroy an app.
+            var owner = manager.getOwnerApplication(document);
+            result.ownerAvailable = !!owner;
+            result.ownerMethods = owner ? collectMethods(owner) : [];
+          } catch (ownerError) {
+            result.ownerAvailable = false;
+            result.ownerMethods = [];
+            result.ownerError = errorText(ownerError);
           }
         }
-        result.managerMethods.sort();
       } catch (e) {
         result.error = errorText(e);
       }
@@ -631,7 +661,7 @@
       var shared = bridgeShare(report);
       if (!shared) { toast('Wait for the bridge scan to finish.', true); return; }
       var json = JSON.stringify(shared);
-      var text = 'VERGE VIDAA bridge share v3\n' + json;
+      var text = 'VERGE VIDAA bridge share v4\n' + json;
       $('share-text').textContent = json;
       $('share-qr').textContent = 'Preparing QR…';
       $('share-overlay').className = 'on';

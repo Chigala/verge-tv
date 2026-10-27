@@ -80,13 +80,22 @@ const noisyReport = {
     versions: { Hisense_GetOSVersion: 'U09.09' },
     launchRelated: [],
     proprietary: { available: true, returned: 'object', names: [] },
-    oipf: { available: true, managerMethods: domNoise.concat(['createApplication', 'getOwnerApplication']) },
+    oipf: {
+      available: true,
+      managerMethods: domNoise.concat(['createApplication', 'getOwnerApplication']),
+      getOwnerApplicationType: 'function',
+      ownerAvailable: true,
+      ownerMethods: domNoise.concat(['createApplication', 'show', 'destroyApplication'])
+    },
     dial: { available: false, enabled: null, appNames: [] }
   }
 };
 const compactShare = diagnostic.bridgeShare(noisyReport);
 assert(compactShare.oipf.managerMethods.includes('createApplication'), 'application methods must remain in the QR report');
 assert(compactShare.oipf.managerMethods.includes('getOwnerApplication'), 'owner methods must remain in the QR report');
+assert(compactShare.oipf.ownerAvailable, 'owner application availability must remain in the QR report');
+assert(compactShare.oipf.ownerMethods.includes('createApplication'), 'owner application creation must remain in the QR report');
+assert(compactShare.oipf.ownerMethods.includes('show'), 'owner application visibility methods must remain in the QR report');
 assert(!compactShare.oipf.managerMethods.includes('accessKey'), 'DOM properties must not crowd out useful QR data');
 assert(!compactShare.oipf.managerMethods.some(name => /^domProperty/.test(name)), 'generated DOM noise must be excluded');
 assert.strictEqual(noisyReport.bridges.oipf.managerMethods.length, 508, 'sharing must not alter the full diagnostic report');
@@ -96,7 +105,7 @@ const omiShare = compactShare.candidates.find(item => item.name === 'omi_platfor
 assert(omiShare.methods.includes('sendPlatformMessage'), 'focused QR sharing must retain OMI platform methods');
 assert(!JSON.stringify(compactShare).includes('children'), 'nested object dumps must not enter the QR report');
 assert(!JSON.stringify(compactShare).includes('xxx'), 'function source must not enter the QR report');
-assert(('VERGE VIDAA bridge share v3\n' + JSON.stringify(compactShare)).length < 2400, 'representative bridge share must fit one QR');
+assert(('VERGE VIDAA bridge share v4\n' + JSON.stringify(compactShare)).length < 2400, 'representative bridge share must fit one QR');
 
 noisyReport.bridges.dial.appNames = Array.from({ length: 30 }, (_, i) => 'Application number ' + i);
 noisyReport.bridges.proprietary.names = Array.from({ length: 100 }, (_, i) => 'proprietaryMethod' + i);
@@ -107,7 +116,7 @@ noisyReport.bridges.globals.push(...Array.from({ length: 100 }, (_, i) => ({
   children: { huge: 'x'.repeat(5000) }
 })));
 const stressedShare = diagnostic.bridgeShare(noisyReport);
-assert(('VERGE VIDAA bridge share v3\n' + JSON.stringify(stressedShare)).length < 2400, 'large nested reports must be compacted to one QR');
+assert(('VERGE VIDAA bridge share v4\n' + JSON.stringify(stressedShare)).length < 2400, 'large nested reports must be compacted to one QR');
 
 for (const name of ['launchApp', 'launch_app', 'startApp', 'changeSource', 'select_source']) {
   assert(diagnostic.LAUNCH_NAME.test(name), name + ' should be launch-related');
