@@ -42,14 +42,16 @@
   .verdict.good { color: var(--green); }
   .verdict.bad { color: var(--red); }
   .verdict.pending { color: var(--amber); }
-  #summary-grid { display: flex; gap: 22px; align-items: flex-start; flex-wrap: nowrap; }
-  #summary-lines { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
-  .sline { display: grid; grid-template-columns: 150px 1fr; gap: 12px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .76em; }
+  #summary-grid { display: flex; flex-direction: column; gap: 18px; }
+  #summary-lines { display: flex; flex-direction: column; gap: 9px; }
+  .sline { display: grid; grid-template-columns: 190px 1fr; gap: 16px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .95em; line-height: 1.35; }
   .sline .k { color: var(--muted); }
-  .sline .v { color: #e2eaf5; overflow-wrap: anywhere; }
+  .sline .v { color: #eaf1fa; overflow-wrap: anywhere; }
   .sline .v b { color: var(--green); }
-  #qr-box { flex: 0 0 auto; }
-  #qr-box img, #qr-box canvas { background: #fff; padding: 8px; border-radius: 10px; display: block; }
+  #qr-wrap { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+  .qr-label { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .8em; color: var(--muted); }
+  .qr-label b { color: var(--cyan); font-size: 1.25em; }
+  #qr-box img, #qr-box canvas { background: #fff; padding: 10px; border-radius: 10px; display: block; }
   #out { display: flex; flex-direction: column; gap: 4px; }
   .line {
     display: grid; grid-template-columns: 230px 1fr; gap: 12px;
@@ -69,17 +71,20 @@
 </head>
 <body>
 <div id="app">
-  <div class="eyebrow">Verge · VIDAA service probe</div>
-  <h1>What can this page actually call?</h1>
-  <p class="subtitle">
-    The TV's internal bus answers <code>Not supported api</code> for names it doesn't know, and something else for
-    names it does. This run uses that difference to list the real API surface, tries to read the app list file, and
-    tests the second bus on port 9888.
-  </p>
+  <div id="intro">
+    <div class="eyebrow">Verge · VIDAA service probe</div>
+    <h1>What can this page actually call?</h1>
+    <p class="subtitle">
+      The TV's internal bus answers <code>Not supported api</code> for names it doesn't know, and something else for
+      names it does. This run uses that difference to list the real API surface, tries to read the app list file, and
+      tests the second bus on port 9888.
+    </p>
+  </div>
 
   <div class="bar">
     <button class="action primary" id="run">Run probe</button>
     <button class="action" id="copy">Copy results</button>
+    <button class="action" id="nextqr" hidden>Next QR</button>
   </div>
   <p id="hint">D-pad ◀ ▶ selects a button · OK presses · ▲ ▼ scrolls this page</p>
 
@@ -88,7 +93,13 @@
     <div class="verdict pending" id="verdict">Running…</div>
     <div id="summary-grid">
       <div id="summary-lines"></div>
-      <div id="qr-box"></div>
+      <div id="qr-wrap">
+        <div>
+          <div class="qr-label" id="qr-label"></div>
+          <div id="qr-box"></div>
+        </div>
+        <p class="qr-label" id="qr-note">One short QR per fact group. Press ◀ ▶ to reach <b>Next QR</b> if a code won't scan.</p>
+      </div>
     </div>
   </section>
 
@@ -142,6 +153,8 @@
 
   var rows = [];
   var summary = {};
+  var qrPages = [];
+  var qrIndex = 0;
   var $ = function (id) { return document.getElementById(id); };
 
   function add(k, v, kind) {
@@ -167,7 +180,11 @@
     $('out').innerHTML = '';
     $('summary-lines').innerHTML = '';
     $('qr-box').innerHTML = '';
+    $('qr-label').textContent = '';
     $('summary').hidden = true;
+    $('nextqr').hidden = true;
+    qrPages = [];
+    qrIndex = 0;
   }
 
   function short(value, limit) {
@@ -328,6 +345,7 @@
   function run() {
     clear();
     summary = {};
+    $('intro').hidden = false;
     $('run').disabled = true;
     $('summary').hidden = false;
     setVerdict('pending', 'Running…');
@@ -500,12 +518,83 @@
     summaryLine('appIdentifier', summary.ident || '—');
     summaryLine('read app list', summary.appinfo || '—');
     summaryLine('services', summary.svc || '—');
-    summaryLine('known APIs', short(summary.apiSummary || '—', 320));
+
+    var hits = summary.hits || {};
+    var services = (summary.svc || '').split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s && s !== 'none'; });
+    services.forEach(function (name) {
+      var list = hits[name] || [];
+      summaryLine(name + ' APIs', list.length ? list.join(', ') : 'none found');
+    });
     summaryLine('second bus :9888', summary.ws || '—');
 
-    renderQr();
+    buildQr();
+    try { $('intro').hidden = true; } catch (e) {}
     try { window.scrollTo(0, 0); } catch (e) {}
     try { $('run').focus(); } catch (e) {}
+  }
+
+  // Each QR carries one fact group, kept short enough to stay low-density.
+  function buildQr() {
+    var lines = ['VP5'];
+    lines.push('file=' + (summary.appinfo || '?'));
+    lines.push('svc=' + (summary.svc || '?'));
+    var hits = summary.hits || {};
+    Object.keys(hits).forEach(function (name) {
+      lines.push(name + '=' + (hits[name].join('+') || 'none'));
+    });
+    lines.push('ws=' + (summary.ws || '?'));
+
+    var pages = [];
+    var buf = '';
+    var LIMIT = 140;
+    lines.forEach(function (line) {
+      while (line.length > LIMIT) {
+        if (buf) { pages.push(buf); buf = ''; }
+        pages.push(line.slice(0, LIMIT));
+        line = line.slice(LIMIT);
+      }
+      if (!line) return;
+      if (buf && (buf + '\n' + line).length > LIMIT) {
+        pages.push(buf);
+        buf = line;
+      } else {
+        buf = buf ? buf + '\n' + line : line;
+      }
+    });
+    if (buf) pages.push(buf);
+
+    qrPages = pages.length ? pages : ['VP5 empty'];
+    qrIndex = 0;
+    window.__probeSummary = qrPages.join('\n---\n');
+    $('nextqr').hidden = qrPages.length < 2;
+    renderQrPage();
+  }
+
+  function renderQrPage() {
+    var text = qrPages[qrIndex] || '';
+    $('qr-label').innerHTML = 'QR <b>' + (qrIndex + 1) + '</b> of ' + qrPages.length;
+    $('nextqr').textContent = qrPages.length > 1 ? 'Next QR (' + (qrIndex + 1) + '/' + qrPages.length + ')' : 'Next QR';
+    var box = $('qr-box');
+    box.innerHTML = '';
+    if (!window.QRCode) {
+      var script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+      script.onload = function () { drawQr(text); };
+      script.onerror = function () { box.textContent = 'QR library unavailable; use the text above.'; };
+      document.head.appendChild(script);
+      return;
+    }
+    drawQr(text);
+  }
+
+  function drawQr(text) {
+    var box = $('qr-box');
+    box.innerHTML = '';
+    try {
+      new window.QRCode(box, { text: text, width: 320, height: 320, correctLevel: window.QRCode.CorrectLevel.M });
+    } catch (e) {
+      box.textContent = 'QR failed: ' + ((e && e.message) || e);
+    }
   }
 
   function summaryLine(k, v) {
@@ -527,39 +616,6 @@
     $('verdict').textContent = message;
   }
 
-  function renderQr() {
-    var text = [
-      'VP4',
-      'appinfo=' + (summary.appinfo || '?'),
-      'svc=' + (summary.svc || '?'),
-      'api=' + (summary.apiSummary || '?'),
-      'ws=' + (summary.ws || '?')
-    ].join('\n');
-    if (text.length > 880) text = text.slice(0, 880);
-    window.__probeSummary = text;
-    var box = $('qr-box');
-    box.innerHTML = '';
-    if (!window.QRCode) {
-      var script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
-      script.onload = function () { drawQr(text); };
-      script.onerror = function () { box.textContent = 'QR library unavailable; use the text above.'; };
-      document.head.appendChild(script);
-      return;
-    }
-    drawQr(text);
-  }
-
-  function drawQr(text) {
-    var box = $('qr-box');
-    box.innerHTML = '';
-    try {
-      new window.QRCode(box, { text: text, width: 240, height: 240, correctLevel: window.QRCode.CorrectLevel.L });
-    } catch (e) {
-      box.textContent = 'QR failed: ' + ((e && e.message) || e);
-    }
-  }
-
   function copyResults() {
     var text = rows.map(function (r) { return r.k + ': ' + r.v; }).join('\n');
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -568,7 +624,9 @@
   }
 
   function focusables() {
-    return Array.prototype.slice.call(document.querySelectorAll('.action:not([disabled])'));
+    return Array.prototype.slice.call(document.querySelectorAll('.action:not([disabled])')).filter(function (el) {
+      return el.offsetParent !== null;
+    });
   }
 
   function moveFocus(keyCode) {
@@ -599,6 +657,12 @@
 
   $('run').addEventListener('click', run);
   $('copy').addEventListener('click', copyResults);
+  $('nextqr').addEventListener('click', function () {
+    if (qrPages.length < 2) return;
+    qrIndex = (qrIndex + 1) % qrPages.length;
+    renderQrPage();
+    try { window.scrollTo(0, 0); } catch (e) {}
+  });
 
   document.addEventListener('keydown', function (event) {
     var key = event.keyCode;
