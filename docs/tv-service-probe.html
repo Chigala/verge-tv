@@ -81,7 +81,7 @@
     <p class="note">The QR holds the same summary that is on screen. Nothing is uploaded.</p>
   </section>
 
-  <footer>Verge · service probe · read-only: status reads and file reads only.</footer>
+  <footer>Verge · service probe v2 · read-only: status reads and file reads only. D-pad moves, OK presses.</footer>
 </div>
 
 <script>
@@ -338,17 +338,75 @@
     }
   }
 
+  function focusables() {
+    return Array.prototype.slice.call(document.querySelectorAll('.action:not([disabled])'));
+  }
+
+  function moveFocus(keyCode) {
+    var list = focusables();
+    if (!list.length) return;
+    var current = document.activeElement;
+    if (list.indexOf(current) === -1) {
+      list[0].focus();
+      return;
+    }
+    var from = current.getBoundingClientRect();
+    var fx = from.left + from.width / 2;
+    var fy = from.top + from.height / 2;
+    var best = null;
+    var bestScore = Infinity;
+    for (var i = 0; i < list.length; i += 1) {
+      if (list[i] === current) continue;
+      var rect = list[i].getBoundingClientRect();
+      var x = rect.left + rect.width / 2;
+      var y = rect.top + rect.height / 2;
+      var dx = x - fx;
+      var dy = y - fy;
+      var valid = keyCode === 37 ? dx < -5 : keyCode === 39 ? dx > 5 : keyCode === 38 ? dy < -5 : dy > 5;
+      if (!valid) continue;
+      var primary = (keyCode === 37 || keyCode === 39) ? Math.abs(dx) : Math.abs(dy);
+      var cross = (keyCode === 37 || keyCode === 39) ? Math.abs(dy) : Math.abs(dx);
+      var score = primary + cross * 2.5;
+      if (score < bestScore) { best = list[i]; bestScore = score; }
+    }
+    if (best) {
+      best.focus();
+      best.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    } else {
+      list[0].focus();
+    }
+  }
+
   $('run').addEventListener('click', run);
   $('copy').addEventListener('click', copyResults);
 
   document.addEventListener('keydown', function (event) {
     var key = event.keyCode;
+    if (key >= 37 && key <= 40) {
+      moveFocus(key);
+      event.preventDefault();
+      return;
+    }
+    if (key === 13) {
+      var active = document.activeElement;
+      if (!active || active === document.body) {
+        var list = focusables();
+        if (list.length) {
+          list[0].focus();
+          list[0].click();
+        }
+      }
+      return;
+    }
     if (key === 8 || key === 27 || key === 461 || key === 10009 || key === 10071) {
       if (window.history.length > 1) window.history.back();
       else window.location.href = 'index.html';
       event.preventDefault();
     }
   });
+
+  // TV browsers do not move focus with the D-pad, so start on the main button.
+  try { $('run').focus(); } catch (e) {}
 })();
 </script>
 </body>
