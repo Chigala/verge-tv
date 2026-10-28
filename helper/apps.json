@@ -1,0 +1,416 @@
+[
+  {
+    "appId": "284",
+    "name": "TV Channels\u25b6",
+    "url": "vidaa-plus",
+    "icon": "https://img.vidaahub.com/vidaa/2025/9/202509170704586973.jpg?resize=w_300,h_300",
+    "store": 99,
+    "native": true,
+    "hidden": false
+  },
+  {
+    "appId": "1",
+    "name": "Netflix",
+    "url": "netflix",
+    "icon": "https://img.vidaahub.com/vidaa/2023/11/202311090857551807.png",
+    "store": 98,
+    "native": true,
+    "hidden": false
+  },
+  {
+    "appId": "2",
+    "name": "Prime Video",
+    "url": "amazon",
+    "icon": "https://img.vidaahub.com/vidaa/2024/11/202411210932408667.png",
+    "store": 98,
+    "native": true,
+    "hidden": false
+  },
+  {
+    "appId": "3",
+    "name": "YouTube",
+    "url": "youtube",
+    "icon": "https://img.vidaahub.com/vidaa/2023/11/202311090858299321.png",
+    "store": 98,
+    "native": true,
+    "hidden": false
+  },
+  {
+    "appId": "244",
+    "name": "UEFA.tv",
+    "url": "https://dice-tv.imggaming.com/vidaa/dce.uefatv/index.html#/",
+    "icon": "https://img.vidaahub.com/vidaa/2023/11/202311090919094943.png",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "227",
+    "name": "Haystack TV Local + World News",
+    "url": "https://dn6q4f0q0kh23.cloudfront.net/receiver/hisense/haystackreceiver.html",
+    "icon": "https://img.vidaahub.com/vidaa/2024/12/202412101945116636.jpg",
+    "store": 98,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "245",
+    "name": "Triller TV.",
+    "url": "https://ott-apps.fite.tv/hisense/index.html",
+    "icon": "https://img.vidaahub.com/vidaa/2024/1/202401240916139001.png",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "167",
+    "name": "DStv Now",
+    "url": "https://hisense-app.dstv.com",
+    "icon": "https://img.vidaahub.com/vidaa/2024/9/202409200733066928.png",
+    "store": 98,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "24",
+    "name": "MBC Shahid",
+    "url": "https://tvweb.shahid.net/hisense/prod/index.html",
+    "icon": "https://img.vidaahub.com/vidaa/2026/1/202601021646538645.png",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "312",
+    "name": "StarTimes ON",
+    "url": "https://webtv.startimestv.com/",
+    "icon": "https://img.vidaahub.com/vidaa/2021/11/202111120738412176.png",
+    "store": 98,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "2256",
+    "name": "Spotify : Music & Podcasts",
+    "url": "https://api-partner.spotify.com/tvapp?platform=vidaa",
+    "icon": "https://img.vidaahub.com/vidaa/2026/5/202605290216573337.jpg",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "79",
+    "name": "Red Bull TV",
+    "url": "https://vidaa-v2.redbull.tv",
+    "icon": "https://img.vidaahub.com/vidaa/2023/11/202311090916463905.png",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "238",
+    "name": "Mindset",
+    "url": "https://tvapp.mindset.africa/",
+    "icon": "https://img.vidaahub.com/vidaa/2021/11/202111120828391000.png",
+    "store": 98,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "304",
+    "name": "iWant",
+    "url": "https://livingroom.iwanttfc.com/vidaa/index.html",
+    "icon": "https://img.vidaahub.com/vidaa/2025/7/202507090345145673.png",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "233",
+    "name": "Kidoodle TV",
+    "url": "https://ctv-prod.kidoodle.tv/vidaa/index.html",
+    "icon": "https://img.vidaahub.com/vidaa/2026/3/202603170735246004.png",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "47",
+    "name": "DEEZER",
+    "url": "https://tv2.deezer.com/hisense",
+    "icon": "https://img.vidaahub.com/vidaa/2025/1/202501100241497703.png",
+    "store": 98,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "162",
+    "name": "DAZN",
+    "url": "https://tv.dazn.com/app/vidaa/",
+    "icon": "https://img.vidaahub.com/vidaa/2024/5/202405300640297559.png",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "293",
+    "name": "NBA",
+    "url": "https://cweb-ott.nba.com/",
+    "icon": "https://img.vidaahub.com/vidaa/2026/6/202606260558403108.png",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "263",
+    "name": "\u0627\u0644\u0639\u0631\u0628\u064a\u0629",
+    "url": "https://hisense.alarabiya.tv/",
+    "icon": "https://img.vidaahub.com/vidaa/2021/11/202111120815044968.jpg",
+    "store": 98,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "294",
+    "name": "Al Hadath",
+    "url": "https://hisense.alhadath.tv/",
+    "icon": "https://img.vidaahub.com/vidaa/2021/11/202111120756149942.png",
+    "store": 98,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "2562",
+    "name": "V Home",
+    "url": "https://tvmodules-vidaa.vidaahub.com/home-os/V1.0/index-home-os.html?canLaunchingVidaaTV=true",
+    "icon": "https://img.vidaahub.com/vidaa/2026/3/202603041122457789.jpg",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "164",
+    "name": "APP STORE",
+    "url": "vidaa-store",
+    "icon": "https://img.vidaahub.com/vidaa/2023/11/202311210654589294.png",
+    "store": 99,
+    "native": true,
+    "hidden": false
+  },
+  {
+    "appId": "16",
+    "name": "TV Browser",
+    "url": "browser",
+    "icon": "https://img.vidaahub.com/vidaa/2023/11/202311210704287492.png",
+    "store": 100,
+    "native": true,
+    "hidden": false
+  },
+  {
+    "appId": "42",
+    "name": "Plex",
+    "url": "https://app.plex.tv/tv-vidaa",
+    "icon": "https://img.vidaahub.com/vidaa/2023/11/202311090915047445.png",
+    "store": 98,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "2243",
+    "name": "VIDAA Art",
+    "url": "https://tvmodules-vidaa.vidaahub.com/vidaa-art/V1.0/index-vidaa-art.html",
+    "icon": "https://img.vidaahub.com/vidaa/2024/6/202406190708079062.png",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "184",
+    "name": "Vod On Demand",
+    "url": "vidaa-free",
+    "icon": "https://img.vidaahub.com/vidaa/2026/2/202602060557241329.jpg?resize=w_300,h_300",
+    "store": 98,
+    "native": true,
+    "hidden": false
+  },
+  {
+    "appId": "2089",
+    "name": "ChaupalTV",
+    "url": "https://tv.chaupal.tv/vidaa",
+    "icon": "https://img.vidaahub.com/vidaa/2023/3/202303160824344626.jpg",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "34",
+    "name": "Anyview Cast",
+    "url": "miracast",
+    "icon": "https://img.vidaahub.com/vidaa/2021/11/202111120757457079.png",
+    "store": 99,
+    "native": true,
+    "hidden": false
+  },
+  {
+    "appId": "230",
+    "name": "MUBI",
+    "url": "https://tv-production.mubi.com/vidaa/4.0.0/",
+    "icon": "https://img.vidaahub.com/vidaa/2022/4/202204300235256422.png",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "355",
+    "name": "UFC",
+    "url": "https://dice-tv.imggaming.com/vidaa/dce.ufc/index.html",
+    "icon": "https://img.vidaahub.com/vidaa/2023/11/202311090930102217.png",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "36",
+    "name": "ToonGoggles",
+    "url": "https://html5.toongoggles.com/",
+    "icon": "https://img.vidaahub.com/vidaa/2023/11/202311060906446498.png",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "1571",
+    "name": "AfroLandTV",
+    "url": "https://html5.afrolandtv.com",
+    "icon": "https://img.vidaahub.com/vidaa/2022/6/202206300351055171.png",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "15",
+    "name": "AccuWeather",
+    "url": "accuweather",
+    "icon": "https://img.vidaahub.com/vidaa/2023/11/202311091029582894.png",
+    "store": 99,
+    "native": true,
+    "hidden": false
+  },
+  {
+    "appId": "44",
+    "name": "Media",
+    "url": "media",
+    "icon": "https://img.vidaahub.com/vidaa/2023/11/202311210709463531.png",
+    "store": 98,
+    "native": true,
+    "hidden": false
+  },
+  {
+    "appId": "307",
+    "name": "iQIYI",
+    "url": "https://tv.iq.com",
+    "icon": "https://img.vidaahub.com/vidaa/2022/5/202205301118186400.png",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "166",
+    "name": "E-Manual",
+    "url": "file:///APPS/emanual/Local_ebook/index.html",
+    "icon": "https://img.vidaahub.com/vidaa/2023/11/202311210706069065.png",
+    "store": 99,
+    "native": true,
+    "hidden": false
+  },
+  {
+    "appId": "1623",
+    "name": "A to Z Movie Box",
+    "url": "https://vidaa-tv.vlogbox.com/?template=1&platform=e7d0d6bc-b1c1-11ec-8e5c-0a0d34293ce6",
+    "icon": "https://img.vidaahub.com/vidaa/2022/7/202207270112586222.png?resize=w_300,h_300",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "35",
+    "name": "Game Center",
+    "url": "http://apps.tvgam.es/tv_games/hisense_portal/production/portal/index.html",
+    "icon": "https://img.vidaahub.com/vidaa/2023/11/202311090915362271.png",
+    "store": 98,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "2116",
+    "name": "Couchplay Games",
+    "url": "https://vidaa.itsmy.tv/spielecenter/vidaa.php?from=app&app=couchplayapp",
+    "icon": "https://img.vidaahub.com/vidaa/2024/3/202403111025194658.png",
+    "store": 98,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "1898",
+    "name": "Pac Rat",
+    "url": "https://lala.games/h5/vidaa-os/pac_rat/index.html",
+    "icon": "https://img.vidaahub.com/vidaa/2022/11/202211111921187837.jpg?resize=w_300,h_300",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "1897",
+    "name": "Nugget Seeker",
+    "url": "https://lala.games/h5/vidaa-os/nugget-seeker/index.html",
+    "icon": "https://img.vidaahub.com/vidaa/2022/11/202211111802039475.jpg?resize=w_300,h_300",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "1893",
+    "name": "Maze Game",
+    "url": "https://lala.games/h5/vidaa-os/Maze_Game/index.html",
+    "icon": "https://img.vidaahub.com/vidaa/2022/11/202211111709048812.png?resize=w_300,h_300",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "1891",
+    "name": "Little Dino Adventure",
+    "url": "https://lala.games/h5/vidaa-os/Little-Dino-Adventure/index.html",
+    "icon": "https://img.vidaahub.com/vidaa/2022/11/202211111645006133.png?resize=w_300,h_300",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "1884",
+    "name": "Car Rush",
+    "url": "https://lala.games/h5/vidaa-os/car_rush/index.html",
+    "icon": "https://img.vidaahub.com/vidaa/2022/11/202211111546428997.jpg?resize=w_300,h_300",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "1900",
+    "name": "Snake and Ladders",
+    "url": "https://gameflix.tv/media/vidaa-os/snake_and_ladders/index.html",
+    "icon": "https://img.vidaahub.com/vidaa/2022/11/202211111937082929.jpg?resize=w_300,h_300",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  },
+  {
+    "appId": "1902",
+    "name": "Water Craft Rush",
+    "url": "https://lala.games/h5/vidaa-os/watercraft_rush/index.html",
+    "icon": "https://img.vidaahub.com/vidaa/2022/11/202211111952245311.jpg?resize=w_300,h_300",
+    "store": 99,
+    "native": false,
+    "hidden": false
+  }
+]

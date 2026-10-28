@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Verge</title>
+<style>
+  :root {
+    --bg: #06080d; --panel: #111725; --line: #26303f; --text: #f3f7fc;
+    --muted: #93a2b7; --cyan: #5ad8d0; --green: #6bdfa2; --red: #ff8892; --amber: #f3c969;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    background:
+      radial-gradient(circle at 88% 2%, rgba(42,116,130,.18), transparent 32%),
+      radial-gradient(circle at 2% 96%, rgba(64,76,142,.14), transparent 34%),
+      var(--bg);
+    padding: 3.2vh 3.4vw;
+    overflow-x: hidden;
+  }
+  header { display: flex; align-items: baseline; gap: 18px; margin-bottom: 2.2vh; }
+  .mark { font-size: clamp(22px, 2vw, 34px); font-weight: 800; letter-spacing: -.04em; }
+  .mark span { color: var(--cyan); }
+  .status { color: var(--muted); font-size: clamp(12px, .82vw, 16px); }
+  .status b { color: var(--text); font-weight: 700; }
+  .status.bad b { color: var(--red); }
+  .status.good b { color: var(--green); }
+
+  #grid {
+    display: grid; gap: 1.6vh 1.1vw;
+    grid-template-columns: repeat(auto-fill, minmax(clamp(120px, 10vw, 190px), 1fr));
+  }
+  .tile {
+    position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; padding: 16px 10px; min-height: clamp(120px, 15vh, 190px);
+    border: 1px solid var(--line); border-radius: 16px;
+    background: linear-gradient(180deg, #151d2c, #101623);
+    color: var(--text); font: inherit; cursor: pointer; text-align: center;
+    transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+  }
+  .tile img { width: clamp(42px, 4.2vw, 64px); height: clamp(42px, 4.2vw, 64px); object-fit: contain; border-radius: 10px; }
+  .tile .glyph {
+    display: flex; align-items: center; justify-content: center;
+    width: clamp(44px, 4.4vw, 66px); height: clamp(44px, 4.4vw, 66px); border-radius: 12px;
+    background: rgba(90,216,208,.12); color: var(--cyan);
+    font-size: clamp(20px, 1.9vw, 30px); font-weight: 800;
+  }
+  .tile .label { font-size: clamp(11px, .82vw, 15px); font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+  .tile:focus { outline: 0; border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(90,216,208,.26); transform: translateY(-3px) scale(1.02); }
+  .tile.launching { border-color: var(--green); }
+  .tile.failed { border-color: var(--red); }
+
+  #empty { color: var(--muted); font-size: clamp(13px, .95vw, 17px); line-height: 1.6; max-width: 70ch; }
+  #empty code { color: var(--cyan); font-family: ui-monospace, Menlo, monospace; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: 4vh; transform: translateX(-50%) translateY(20px);
+    padding: 12px 22px; border-radius: 12px; border: 1px solid var(--line);
+    background: #131b29; color: var(--text); font-size: clamp(12px, .9vw, 16px);
+    opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  footer { margin-top: 2.6vh; color: #55627a; font-size: clamp(10px, .72vw, 13px); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="mark">Verge<span>·</span>TV</div>
+    <div class="status" id="status">connecting to the helper…</div>
+  </header>
+
+  <div id="grid"></div>
+  <div id="empty" hidden></div>
+
+  <footer>◀ ▶ ▲ ▼ move · OK opens · Back returns here</footer>
+  <div id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var grid = document.getElementById('grid');
+  var statusEl = document.getElementById('status');
+  var emptyEl = document.getElementById('empty');
+  var toastEl = document.getElementById('toast');
+  var tiles = [];
+  var busy = false;
+
+  function $(id) { return document.getElementById(id); }
+
+  function toast(message) {
+    toastEl.textContent = message;
+    toastEl.className = 'show';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { toastEl.className = ''; }, 2600);
+  }
+
+  function setStatus(text, kind) {
+    statusEl.innerHTML = text;
+    statusEl.className = 'status' + (kind ? ' ' + kind : '');
+  }
+
+  function initials(name) {
+    var words = String(name || '?').replace(/[^A-Za-z0-9 ]/g, ' ').trim().split(/\s+/);
+    if (!words.length) return '?';
+    if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+
+  function makeTile(app, index) {
+    var button = document.createElement('button');
+    button.className = 'tile';
+    button.setAttribute('data-index', String(index));
+    button.setAttribute('aria-label', app.name || app.appId);
+
+    if (app.icon) {
+      var img = document.createElement('img');
+      img.alt = '';
+      img.src = app.icon;
+      img.onerror = function () { img.replaceWith(glyph(app)); };
+      button.appendChild(img);
+    } else {
+      button.appendChild(glyph(app));
+    }
+
+    var label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = app.name || ('App ' + app.appId);
+    button.appendChild(label);
+
+    button.addEventListener('click', function () { open(app, button); });
+    return button;
+  }
+
+  function glyph(app) {
+    var box = document.createElement('div');
+    box.className = 'glyph';
+    box.textContent = initials(app.name || app.url);
+    return box;
+  }
+
+  function open(app, button) {
+    if (busy) return;
+    busy = true;
+    button.classList.add('launching');
+    toast('Opening ' + (app.name || app.appId) + '…');
+
+    fetch('/api/launch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appId: app.appId })
+    }).then(function (response) {
+      return response.json().then(function (body) { return { ok: response.ok, body: body }; });
+    }).then(function (result) {
+      busy = false;
+      button.classList.remove('launching');
+      if (!result.ok || result.body.ok === false) {
+        button.classList.add('failed');
+        setTimeout(function () { button.classList.remove('failed'); }, 2500);
+        toast('Could not open it: ' + ((result.body && result.body.error) || 'unknown error'));
+        return;
+      }
+      toast('Opened ' + (result.body.name || app.name || app.appId));
+    }).catch(function (error) {
+      busy = false;
+      button.classList.remove('launching');
+      button.classList.add('failed');
+      setTimeout(function () { button.classList.remove('failed'); }, 2500);
+      toast('Helper unreachable: ' + error.message);
+    });
+  }
+
+  function render(apps) {
+    grid.innerHTML = '';
+    tiles = [];
+    apps.forEach(function (app, index) {
+      var tile = makeTile(app, index);
+      grid.appendChild(tile);
+      tiles.push(tile);
+    });
+    if (tiles.length) {
+      emptyEl.hidden = true;
+      tiles[0].focus();
+    }
+  }
+
+  function explain(message) {
+    grid.innerHTML = '';
+    tiles = [];
+    emptyEl.hidden = false;
+    emptyEl.innerHTML = message;
+  }
+
+  function load() {
+    setStatus('reading the TV…');
+    fetch('/api/status', { cache: 'no-store' }).then(function (response) {
+      return response.json();
+    }).then(function (data) {
+      if (!data.paired) {
+        setStatus('not paired', 'bad');
+        explain('The helper has no token for this TV yet.<br><br>On the computer running the helper, run:<br><code>python3 helper/pair.py</code>');
+        return;
+      }
+      if (!data.reachable) {
+        setStatus('TV unreachable · ' + (data.error || 'no answer'), 'bad');
+        explain('The helper is running but could not reach the TV at <b>' + (data.host || '?') + '</b>.<br><br>Check the TV is on and on the same network, then reload.');
+        return;
+      }
+      var apps = (data.apps || []).filter(function (app) { return app.appId; });
+      setStatus('<b>' + apps.length + '</b> apps · ' + (data.host || ''), 'good');
+      if (!apps.length) {
+        explain('The TV answered but returned no apps. Try reloading.');
+        return;
+      }
+      render(apps);
+    }).catch(function (error) {
+      setStatus('helper not answering', 'bad');
+      explain('This page is being served by the helper, but its API did not answer (' + error.message + ').<br><br>Check the helper window for errors.');
+    });
+  }
+
+  function moveFocus(keyCode) {
+    if (!tiles.length) return;
+    var current = document.activeElement;
+    var from = tiles.indexOf(current);
+    if (from === -1) { tiles[0].focus(); return; }
+    var origin = current.getBoundingClientRect();
+    var ox = origin.left + origin.width / 2;
+    var oy = origin.top + origin.height / 2;
+    var best = null;
+    var bestScore = Infinity;
+
+    for (var i = 0; i < tiles.length; i += 1) {
+      if (i === from) continue;
+      var rect = tiles[i].getBoundingClientRect();
+      var dx = (rect.left + rect.width / 2) - ox;
+      var dy = (rect.top + rect.height / 2) - oy;
+      var valid = keyCode === 37 ? dx < -4 : keyCode === 39 ? dx > 4 : keyCode === 38 ? dy < -4 : dy > 4;
+      if (!valid) continue;
+      var primary = (keyCode === 37 || keyCode === 39) ? Math.abs(dx) : Math.abs(dy);
+      var cross = (keyCode === 37 || keyCode === 39) ? Math.abs(dy) : Math.abs(dx);
+      var score = primary + cross * 2.6;
+      if (score < bestScore) { best = tiles[i]; bestScore = score; }
+    }
+    if (best) best.focus();
+  }
+
+  document.addEventListener('keydown', function (event) {
+    var key = event.keyCode;
+    if (key === 37 || key === 39 || key === 38 || key === 40) {
+      moveFocus(key); event.preventDefault(); return;
+    }
+    if (key === 13) {
+      var active = document.activeElement;
+      if (active && active.classList.contains('tile')) { active.click(); event.preventDefault(); }
+      else if (tiles.length) { tiles[0].focus(); tiles[0].click(); event.preventDefault(); }
+      return;
+    }
+    if (key === 8 || key === 27 || key === 461 || key === 10009 || key === 10071) {
+      load(); event.preventDefault();
+    }
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

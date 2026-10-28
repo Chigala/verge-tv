@@ -7,3 +7,7 @@ docs/data/runtime.json
 worker/.dev.vars*
 worker/.wrangler/
 worker/node_modules/
+helper/config.json
+helper/.pin
+helper/certs/
+helper/__pycache__/
