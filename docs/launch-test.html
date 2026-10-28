@@ -261,9 +261,17 @@
       var result = b.host.sendPlatformMessage(json);
       addLog('Accepted by JS', 'sendPlatformMessage returned ' + text(result) + ' (no exception)', 'good');
       verdict('pending', 'Message handed to the platform bridge with no exception. Watch the screen: if the app opens, this route works. If nothing happens within 5 seconds, the platform accepted the call but ignored the request.');
+      return;
     } catch (e) {
-      addLog('Threw', (e && e.message) || String(e), 'bad');
-      verdict('bad', 'sendPlatformMessage threw: ' + ((e && e.message) || String(e)) + '. The bridge exists but refused this call.');
+      addLog('String form threw', (e && e.message) || String(e), 'bad');
+    }
+    try {
+      var objectResult = b.host.sendPlatformMessage(message);
+      addLog('Accepted by JS', 'object form returned ' + text(objectResult) + ' (no exception)', 'good');
+      verdict('pending', 'The string form threw, but the object form was accepted. Watch the screen to see whether the app opens.');
+    } catch (e2) {
+      addLog('Object form threw', (e2 && e2.message) || String(e2), 'bad');
+      verdict('bad', 'sendPlatformMessage refused both the string and the object form: ' + ((e2 && e2.message) || String(e2)) + '.');
     }
   }
 
