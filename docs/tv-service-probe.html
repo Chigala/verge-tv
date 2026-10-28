@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Verge · VIDAA service probe</title>
+<style>
+  :root {
+    --bg: #07090f; --panel: #101623; --line: #263044; --text: #f2f6fc;
+    --muted: #98a6ba; --cyan: #5ad8d0; --green: #6bdfa2; --amber: #f3c969;
+    --red: #ff8892; --blue: #93bbff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: clamp(15px, 1.1vw, 21px);
+    background:
+      radial-gradient(circle at 92% 3%, rgba(42, 116, 130, .16), transparent 30%),
+      radial-gradient(circle at 3% 90%, rgba(64, 76, 142, .12), transparent 32%),
+      var(--bg);
+  }
+  #app { width: min(1440px, 93vw); margin: 0 auto; padding: 3vh 0 5vh; }
+  .eyebrow { color: var(--cyan); font-size: .7em; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+  h1 { margin: 6px 0 8px; font-size: clamp(26px, 2.4vw, 44px); line-height: 1.08; letter-spacing: -.03em; }
+  .subtitle { margin: 0; max-width: 940px; color: var(--muted); }
+  .bar { display: flex; gap: 14px; margin: 2.4vh 0; flex-wrap: wrap; }
+  .action {
+    min-height: 62px; padding: 14px 24px; border: 1px solid #33415a; border-radius: 13px;
+    background: linear-gradient(180deg, #1a2436, #131b29); color: var(--text);
+    font: inherit; font-weight: 700; cursor: pointer;
+    transition: transform .12s ease, border-color .12s ease;
+  }
+  .action.primary { border-color: rgba(90, 216, 208, .55); background: linear-gradient(180deg, #143037, #10242b); }
+  .action:focus { outline: 0; border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(90, 216, 208, .22); transform: translateY(-2px); }
+  .action:disabled { opacity: .45; }
+  .panel { border: 1px solid var(--line); border-radius: 16px; background: rgba(16, 22, 35, .9); padding: 18px 20px; }
+  .panel h2 { margin: 0 0 12px; font-size: .95em; letter-spacing: .02em; color: var(--muted); }
+  #out { display: flex; flex-direction: column; gap: 5px; max-height: 52vh; overflow-y: auto; }
+  .line {
+    display: grid; grid-template-columns: 250px 1fr; gap: 14px;
+    padding: 6px 10px; border-radius: 8px; background: rgba(38, 48, 68, .24);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .72em;
+  }
+  .line .k { color: var(--blue); overflow-wrap: anywhere; }
+  .line .v { color: #cfd9e7; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .line.good .k { color: var(--green); }
+  .line.bad .k { color: var(--red); }
+  .line.warn .k { color: var(--amber); }
+  #qr { margin-top: 18px; display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+  #qr img, #qr canvas { background: #fff; padding: 8px; border-radius: 10px; }
+  .note { color: var(--muted); font-size: .8em; max-width: 620px; }
+  footer { margin-top: 3vh; color: #55627a; font-size: .72em; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="eyebrow">Verge · VIDAA service probe</div>
+  <h1>Does this page reach the TV's service bus?</h1>
+  <p class="subtitle">
+    VIDAA exposes an internal service bus on <code>localhost:9009</code>. The installer already uses it to read and
+    write the app list. This page asks the bus harmless read-only questions and reports exactly what comes back.
+  </p>
+
+  <div class="bar">
+    <button class="action primary" id="run">Run probe</button>
+    <button class="action" id="copy">Copy results</button>
+  </div>
+
+  <section class="panel">
+    <h2>Results</h2>
+    <div id="out"><div class="line"><div class="k">idle</div><div class="v">Press Run probe.</div></div></div>
+  </section>
+
+  <section class="panel" id="qr" style="margin-top:18px; display:none">
+    <div>
+      <h2>Photograph this if the text is hard to read</h2>
+      <div id="qr-box"></div>
+    </div>
+    <p class="note">The QR holds the same summary that is on screen. Nothing is uploaded.</p>
+  </section>
+
+  <footer>Verge · service probe · read-only: status reads and file reads only.</footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var BUS = 'http://localhost:9009/service/';
+  var SERVICES = ['tvinfo', 'hiutils', 'pkgmgr', 'media', 'epg', 'pvr', 'ota', 'network', 'bluetooth', 'cast', 'activity', 'window', 'appstore', 'store', 'browser', 'appmgr', 'launcher', 'system'];
+  var PKG_BASES = [
+    'APPS:pkgs/tv.vidaa.jsservice.system/CHA/',
+    'APPS:pkgs/tv.vidaa.jsservice.basic/CHA/',
+    'APPS:pkgs/tv.vidaa.app.osconfig/CHA/'
+  ];
+  var PKG_FILES = ['manifest.json', 'package.json', 'main.js', 'index.js', 'service.json', 'config.json'];
+
+  var rows = [];
+  var summary = {};
+  var $ = function (id) { return document.getElementById(id); };
+
+  function add(k, v, kind) {
+    rows.push({ k: k, v: v, kind: kind || '' });
+    var out = $('out');
+    var line = document.createElement('div');
+    line.className = 'line' + (kind ? ' ' + kind : '');
+    var kk = document.createElement('div');
+    kk.className = 'k';
+    kk.textContent = k;
+    var vv = document.createElement('div');
+    vv.className = 'v';
+    vv.textContent = v;
+    line.appendChild(kk);
+    line.appendChild(vv);
+    out.appendChild(line);
+    out.scrollTop = out.scrollHeight;
+  }
+
+  function clear() {
+    rows = [];
+    $('out').innerHTML = '';
+  }
+
+  function short(value, limit) {
+    var text = typeof value === 'string' ? value : JSON.stringify(value);
+    if (text === undefined) text = String(value);
+    text = text.replace(/\s+/g, ' ');
+    return text.length > limit ? text.slice(0, limit) + '…' : text;
+  }
+
+  function identifier() {
+    try {
+      if (window.vowOSContext && typeof window.vowOSContext.getAppIdentifier === 'function') {
+        return window.vowOSContext.getAppIdentifier();
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  function busCall(service, args, timeoutMs) {
+    return new Promise(function (resolve) {
+      var xhr = new XMLHttpRequest();
+      var done = false;
+      function finish(result) {
+        if (done) return;
+        done = true;
+        resolve(result);
+      }
+      try {
+        xhr.open('POST', BUS + service, true);
+        xhr.timeout = timeoutMs || 4000;
+        try { xhr.setRequestHeader('identifier', identifier()); } catch (e) {}
+        xhr.onload = function () {
+          finish({ ok: true, status: xhr.status, text: xhr.responseText || '' });
+        };
+        xhr.onerror = function () {
+          finish({ ok: false, error: 'network, CORS, or blocked' });
+        };
+        xhr.ontimeout = function () {
+          finish({ ok: false, error: 'timeout' });
+        };
+        xhr.send(JSON.stringify(args));
+      } catch (e) {
+        finish({ ok: false, error: (e && e.message) || String(e) });
+      }
+    });
+  }
+
+  function readFile(path) {
+    if (typeof window.HiUtils_createRequest !== 'function') {
+      return { ret: false, msg: 'HiUtils_createRequest missing' };
+    }
+    try {
+      return window.HiUtils_createRequest('fileRead', { path: path, mode: 6 });
+    } catch (e) {
+      return { ret: false, msg: (e && e.message) || String(e) };
+    }
+  }
+
+  function step(label) {
+    add('—', label, '');
+  }
+
+  function run() {
+    clear();
+    summary = {};
+    $('run').disabled = true;
+    $('qr').style.display = 'none';
+
+    var origin = location.origin || location.href;
+    add('origin', origin);
+    add('protocol', location.protocol);
+    add('secure context', String(window.isSecureContext));
+    add('omi_platform', typeof window.omi_platform === 'object' ? 'present' : 'missing', typeof window.omi_platform === 'object' ? 'good' : 'bad');
+    add('opera_omi', typeof window.opera_omi === 'object' ? 'present' : 'missing');
+    add('vowOS', window.vowOS ? 'present' : 'missing', window.vowOS ? 'good' : 'bad');
+    add('vowOS.service', window.vowOS && window.vowOS.service ? 'present' : 'missing', window.vowOS && window.vowOS.service ? 'good' : 'bad');
+    add('vowOSContext', window.vowOSContext ? 'present' : 'missing');
+    add('HiUtils_createRequest', typeof window.HiUtils_createRequest === 'function' ? 'present' : 'missing');
+    add('Hisense_installApp', typeof window.Hisense_installApp === 'function' ? 'present' : 'missing');
+    add('appIdentifier', short(identifier(), 80));
+
+    summary.o = location.protocol + '|' + (window.vowOS ? 'vowOS' : 'noVowOS') + '|' + (window.omi_platform ? 'omi' : 'noOmi');
+
+    var chain = Promise.resolve();
+
+    chain = chain.then(function () {
+      step('bus reachability');
+      return busCall('tvinfo', { api: 'apiVersion', args: '' }).then(function (r) {
+        if (!r.ok) {
+          add('tvinfo / apiVersion', r.error, 'bad');
+          summary.bus = 'NO';
+          return;
+        }
+        add('tvinfo / apiVersion', 'HTTP ' + r.status + ' · ' + short(r.text, 120), r.status === 200 ? 'good' : 'warn');
+        summary.bus = r.status === 200 ? 'OK' : 'HTTP' + r.status;
+      });
+    });
+
+    chain = chain.then(function () {
+      if (summary.bus !== 'OK') return;
+      step('known services');
+      return busCall('hiutils', { api: 'getUIVersion', args: '' }).then(function (r) {
+        add('hiutils / getUIVersion', r.ok ? 'HTTP ' + r.status + ' · ' + short(r.text, 120) : r.error, r.ok ? 'good' : 'bad');
+      });
+    }).then(function () {
+      if (summary.bus !== 'OK') return;
+      return busCall('pkgmgr', { api: 'getInstalledPkgs', args: '' }).then(function (r) {
+        var count = null;
+        try {
+          var parsed = JSON.parse(r.text);
+          if (parsed && parsed.msg && parsed.msg.length !== undefined) count = parsed.msg.length;
+        } catch (e) {}
+        add('pkgmgr / getInstalledPkgs', r.ok ? 'HTTP ' + r.status + ' · packages=' + String(count) : r.error, r.ok ? 'good' : 'warn');
+        summary.pkg = r.ok ? String(count) : '?';
+      });
+    });
+
+    chain = chain.then(function () {
+      if (summary.bus !== 'OK') return;
+      step('service existence (404 = not routed, 200 = exists)');
+      var index = 0;
+      var found = [];
+      function next() {
+        if (index >= SERVICES.length) {
+          summary.svc = found.join(',') || 'none';
+          add('services found', found.join(', ') || 'none', found.length ? 'good' : 'warn');
+          return Promise.resolve();
+        }
+        var name = SERVICES[index];
+        index += 1;
+        return busCall(name, { api: 'apiVersion', args: '' }).then(function (r) {
+          var status = r.ok ? r.status : 'err';
+          var kind = r.ok && r.status === 200 ? 'good' : (r.ok && r.status === 404 ? '' : 'warn');
+          add('service ' + name, r.ok ? 'HTTP ' + r.status + ' · ' + short(r.text, 80) : r.error, kind);
+          if (r.ok && r.status === 200) found.push(name);
+          return next();
+        });
+      }
+      return next();
+    });
+
+    chain = chain.then(function () {
+      step('package manifest reads');
+      var reads = [];
+      var out = [];
+      for (var i = 0; i < PKG_BASES.length; i += 1) {
+        for (var j = 0; j < PKG_FILES.length; j += 1) {
+          reads.push({ base: PKG_BASES[i], file: PKG_FILES[j] });
+        }
+      }
+      var index = 0;
+      function next() {
+        if (index >= reads.length) {
+          summary.files = out.join(',') || 'none';
+          add('files readable', out.length ? out.join(', ') : 'none', out.length ? 'good' : 'warn');
+          return Promise.resolve();
+        }
+        var item = reads[index];
+        index += 1;
+        var path = item.base + item.file;
+        var result = readFile(path);
+        if (result && result.ret && typeof result.msg === 'string' && result.msg.length) {
+          out.push(item.file + ':' + result.msg.length);
+          add('read ' + item.file, result.msg.length + ' bytes · ' + short(result.msg, 150), 'good');
+        } else if (result && result.ret) {
+          add('read ' + item.file, 'ret=true but empty', 'warn');
+        }
+        return next();
+      }
+      return next();
+    });
+
+    chain.then(function () {
+      add('—', 'probe finished', 'good');
+      $('run').disabled = false;
+      renderQr();
+    }).catch(function (e) {
+      add('probe error', (e && e.message) || String(e), 'bad');
+      $('run').disabled = false;
+    });
+  }
+
+  function renderQr() {
+    var text = 'VP1|' + (summary.o || '') + '|bus:' + (summary.bus || '?') + '|pkg:' + (summary.pkg || '?') + '|svc:' + (summary.svc || '?') + '|files:' + (summary.files || '?');
+    if (text.length > 900) text = text.slice(0, 900);
+    window.__probeSummary = text;
+    $('qr').style.display = 'flex';
+    var box = $('qr-box');
+    box.innerHTML = '';
+    if (!window.QRCode) {
+      var script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+      script.onload = function () { drawQr(text); };
+      script.onerror = function () { box.textContent = 'QR library unavailable. Use Copy results.'; };
+      document.head.appendChild(script);
+      return;
+    }
+    drawQr(text);
+  }
+
+  function drawQr(text) {
+    var box = $('qr-box');
+    box.innerHTML = '';
+    try {
+      new window.QRCode(box, { text: text, width: 300, height: 300, correctLevel: window.QRCode.CorrectLevel.L });
+    } catch (e) {
+      box.textContent = 'QR failed: ' + ((e && e.message) || e);
+    }
+  }
+
+  function copyResults() {
+    var text = rows.map(function (r) { return r.k + ': ' + r.v; }).join('\n');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(function () {});
+    }
+  }
+
+  $('run').addEventListener('click', run);
+  $('copy').addEventListener('click', copyResults);
+
+  document.addEventListener('keydown', function (event) {
+    var key = event.keyCode;
+    if (key === 8 || key === 27 || key === 461 || key === 10009 || key === 10071) {
+      if (window.history.length > 1) window.history.back();
+      else window.location.href = 'index.html';
+      event.preventDefault();
+    }
+  });
+})();
+</script>
+</body>
+</html>

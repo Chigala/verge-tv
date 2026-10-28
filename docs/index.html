@@ -227,6 +227,7 @@
     <div id="nb-search"><svg viewBox="0 0 24 24"><path d="M10 2a8 8 0 0 1 6.32 12.9l5.39 5.4-1.41 1.4-5.4-5.39A8 8 0 1 1 10 2zm0 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12z"/></svg>Search movies &amp; series</div>
     <div id="tabs"></div>
     <a id="nb-launch-test" class="nb" href="launch-test.html" title="Send a real launch message from this page">Launch test</a>
+    <a id="nb-service-probe" class="nb" href="tv-service-probe.html" title="Read the TV's internal service bus">Service probe</a>
     <a id="nb-diagnostic" class="nb" href="launcher-diagnostic.html" title="Read-only TV launcher diagnostic">Diagnostic</a>
     <div id="clock"></div>
   </div></div>
@@ -684,6 +685,7 @@
       tabState.push({ row: 0, cols: [] });
     }
     navEls.push($('nb-launch-test'));
+    navEls.push($('nb-service-probe'));
     navEls.push($('nb-diagnostic'));
   }
   function paintNav() {
