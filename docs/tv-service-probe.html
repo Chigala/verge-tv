@@ -22,13 +22,13 @@
       radial-gradient(circle at 3% 90%, rgba(64, 76, 142, .12), transparent 32%),
       var(--bg);
   }
-  #app { width: min(1400px, 92vw); margin: 0 auto; padding: 2.6vh 0 4vh; }
+  #app { width: min(1400px, 92vw); margin: 0 auto; padding: 2.4vh 0 4vh; }
   .eyebrow { color: var(--cyan); font-size: .68em; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
   h1 { margin: 6px 0 8px; font-size: clamp(24px, 2.1vw, 40px); line-height: 1.08; letter-spacing: -.03em; }
-  .subtitle { margin: 0; max-width: 940px; color: var(--muted); font-size: .9em; }
-  .bar { display: flex; gap: 14px; margin: 2vh 0; flex-wrap: wrap; }
+  .subtitle { margin: 0; max-width: 960px; color: var(--muted); font-size: .9em; }
+  .bar { display: flex; gap: 14px; margin: 1.8vh 0; flex-wrap: wrap; }
   .action {
-    min-height: 58px; padding: 12px 24px; border: 1px solid #33415a; border-radius: 13px;
+    min-height: 56px; padding: 12px 24px; border: 1px solid #33415a; border-radius: 13px;
     background: linear-gradient(180deg, #1a2436, #131b29); color: var(--text);
     font: inherit; font-weight: 700; cursor: pointer;
     transition: transform .12s ease, border-color .12s ease;
@@ -37,29 +37,31 @@
   .action:focus { outline: 0; border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(90, 216, 208, .22); transform: translateY(-2px); }
   .action:disabled { opacity: .45; }
   .panel { border: 1px solid var(--line); border-radius: 16px; background: rgba(16, 22, 35, .9); padding: 16px 20px; margin-bottom: 16px; }
-  .panel h2 { margin: 0 0 10px; font-size: .8em; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-  .verdict { font-size: 1.35em; font-weight: 800; letter-spacing: -.02em; margin-bottom: 10px; }
+  .panel h2 { margin: 0 0 10px; font-size: .78em; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .verdict { font-size: 1.3em; font-weight: 800; letter-spacing: -.02em; margin-bottom: 10px; }
   .verdict.good { color: var(--green); }
   .verdict.bad { color: var(--red); }
   .verdict.pending { color: var(--amber); }
   #summary-grid { display: flex; gap: 22px; align-items: flex-start; flex-wrap: nowrap; }
-  #summary-lines { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-  .sline { display: grid; grid-template-columns: 190px 1fr; gap: 14px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .8em; }
+  #summary-lines { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .sline { display: grid; grid-template-columns: 150px 1fr; gap: 12px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .76em; }
   .sline .k { color: var(--muted); }
   .sline .v { color: #e2eaf5; overflow-wrap: anywhere; }
+  .sline .v b { color: var(--green); }
   #qr-box { flex: 0 0 auto; }
   #qr-box img, #qr-box canvas { background: #fff; padding: 8px; border-radius: 10px; display: block; }
   #out { display: flex; flex-direction: column; gap: 4px; }
   .line {
-    display: grid; grid-template-columns: 240px 1fr; gap: 14px;
+    display: grid; grid-template-columns: 230px 1fr; gap: 12px;
     padding: 5px 9px; border-radius: 8px; background: rgba(38, 48, 68, .24);
-    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .72em;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .7em;
   }
   .line .k { color: var(--blue); overflow-wrap: anywhere; }
   .line .v { color: #cfd9e7; overflow-wrap: anywhere; white-space: pre-wrap; }
   .line.good .k { color: var(--green); }
   .line.bad .k { color: var(--red); }
   .line.warn .k { color: var(--amber); }
+  .line.head .k { color: var(--cyan); font-weight: 700; }
   #hint { color: var(--muted); font-size: .78em; margin: 0 0 10px; }
   footer { margin-top: 2vh; color: #55627a; font-size: .72em; }
   [hidden] { display: none !important; }
@@ -68,10 +70,11 @@
 <body>
 <div id="app">
   <div class="eyebrow">Verge · VIDAA service probe</div>
-  <h1>Does this page reach the TV's service bus?</h1>
+  <h1>What can this page actually call?</h1>
   <p class="subtitle">
-    Asks the TV's internal service bus on <code>localhost:9009</code> a set of harmless read-only questions.
-    Results are reported exactly as the TV returns them.
+    The TV's internal bus answers <code>Not supported api</code> for names it doesn't know, and something else for
+    names it does. This run uses that difference to list the real API surface, tries to read the app list file, and
+    tests the second bus on port 9888.
   </p>
 
   <div class="bar">
@@ -94,7 +97,7 @@
     <div id="out"><div class="line"><div class="k">idle</div><div class="v">Press Run probe.</div></div></div>
   </section>
 
-  <footer>Verge · service probe v3 · read-only: status reads and file reads only.</footer>
+  <footer>Verge · service probe v4 · read-only: status reads, api names, file reads. Nothing is installed or changed.</footer>
 </div>
 
 <script>
@@ -102,13 +105,40 @@
   'use strict';
 
   var BUS = 'http://localhost:9009/service/';
-  var SERVICES = ['tvinfo', 'hiutils', 'pkgmgr', 'media', 'epg', 'pvr', 'ota', 'network', 'bluetooth', 'cast', 'activity', 'window', 'appstore', 'store', 'browser', 'appmgr', 'launcher', 'system'];
+
+  // Wide guess list for service existence. Cheap: each miss is a 404.
+  var SERVICES = [
+    'tvinfo', 'hiutils', 'pkgmgr', 'appmgr', 'app', 'system', 'launcher', 'browser', 'tvmgr',
+    'media', 'epg', 'pvr', 'ota', 'network', 'bluetooth', 'cast', 'activity', 'window',
+    'appstore', 'store', 'power', 'input', 'tuner', 'audio', 'video', 'picture', 'osd',
+    'setting', 'settings', 'device', 'account', 'keyboard', 'voice', 'remote', 'cec',
+    'channel', 'source', 'market', 'webapp', 'apps', 'appcontrol', 'session', 'log', 'debug',
+    'record', 'timeshift', 'node', 'jsservice', 'vowos', 'phoenix', 'dvb', 'hbbtv', 'drm',
+    'subtitle', 'teletext', 'hdcp', 'splash', 'boot'
+  ];
+
+  // Read-only or launch-shaped names only. No uninstall / restart / power / reset.
+  var APIS = [
+    'apiVersion', 'version', 'getVersion', 'getApiVersion', 'getUIVersion', 'getOSVersion',
+    'getDeviceInfo', 'getDeviceId', 'getDeviceID', 'getSerialNumber', 'getModel', 'getCountryCode',
+    'getLanguage', 'getNetworkInfo', 'getStorage', 'getMemory', 'getPowerState', 'getVolume',
+    'getInput', 'getSource', 'getBrightness', 'getContrast', 'getPictureMode', 'getSoundMode',
+    'getChannel', 'getChannelList', 'getEPG', 'getRecordings', 'getSchedule', 'getTimeShift',
+    'getBluetooth', 'getCast', 'getOTA', 'checkUpdate', 'getAppList', 'getInstalledPkgs',
+    'getPkgInfo', 'getPkgList', 'getAppInfo', 'getInfo', 'getState', 'getStatus', 'getParam',
+    'list', 'query', 'register', 'subscribe', 'launch', 'startApp', 'startApplication',
+    'startThirdApp', 'runApp', 'openApp', 'open', 'start', 'exec', 'cmd', 'shell', 'command',
+    'request', 'event', 'readFile', 'writeFile', 'fileRead', 'fileWrite', 'fileList', 'listDir',
+    'readDir', 'getFileList', 'writeTvRunLog', 'getDabTool', 'setbiz', 'login', 'auth'
+  ];
+
   var PKG_BASES = [
     'APPS:pkgs/tv.vidaa.jsservice.system/CHA/',
     'APPS:pkgs/tv.vidaa.jsservice.basic/CHA/',
-    'APPS:pkgs/tv.vidaa.app.osconfig/CHA/'
+    '/APPS/pkgs/tv.vidaa.jsservice.system/CHA/',
+    'file:///APPS/pkgs/tv.vidaa.jsservice.system/CHA/'
   ];
-  var PKG_FILES = ['manifest.json', 'package.json', 'main.js', 'index.js', 'service.json', 'config.json'];
+  var PKG_FILES = ['package.json', 'manifest.json', 'index.js', 'main.js', 'service.json', 'config.json'];
 
   var rows = [];
   var summary = {};
@@ -130,6 +160,8 @@
     out.appendChild(line);
   }
 
+  function head(text) { add('—', text, 'head'); }
+
   function clear() {
     rows = [];
     $('out').innerHTML = '';
@@ -141,7 +173,7 @@
   function short(value, limit) {
     var text = typeof value === 'string' ? value : JSON.stringify(value);
     if (text === undefined) text = String(value);
-    text = text.replace(/\s+/g, ' ');
+    text = String(text).replace(/\s+/g, ' ');
     return text.length > limit ? text.slice(0, limit) + '…' : text;
   }
 
@@ -154,7 +186,16 @@
     return '';
   }
 
-  function busCall(service, args, timeoutMs) {
+  function appId() {
+    try {
+      if (window.vowOSContext && typeof window.vowOSContext.getAppId === 'function') {
+        return window.vowOSContext.getAppId();
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  function busCall(service, args, timeoutMs, ident) {
     return new Promise(function (resolve) {
       var xhr = new XMLHttpRequest();
       var done = false;
@@ -165,10 +206,10 @@
       }
       try {
         xhr.open('POST', BUS + service, true);
-        xhr.timeout = timeoutMs || 4000;
-        try { xhr.setRequestHeader('identifier', identifier()); } catch (e) {}
+        xhr.timeout = timeoutMs || 3000;
+        try { xhr.setRequestHeader('identifier', ident === undefined ? identifier() : ident); } catch (e) {}
         xhr.onload = function () { finish({ ok: true, status: xhr.status, text: xhr.responseText || '' }); };
-        xhr.onerror = function () { finish({ ok: false, error: 'network, CORS, or blocked' }); };
+        xhr.onerror = function () { finish({ ok: false, error: 'blocked' }); };
         xhr.ontimeout = function () { finish({ ok: false, error: 'timeout' }); };
         xhr.send(JSON.stringify(args));
       } catch (e) {
@@ -177,15 +218,294 @@
     });
   }
 
-  function readFile(path) {
-    if (typeof window.HiUtils_createRequest !== 'function') {
-      return { ret: false, msg: 'HiUtils_createRequest missing' };
+  // "Not supported api" means the service exists but the name is unknown.
+  function unknownApi(result) {
+    return !!(result && result.ok && /Not supported api/i.test(result.text));
+  }
+  function missingService(result) {
+    return !!(result && result.ok && /Wrong request/i.test(result.text));
+  }
+
+  function pool(items, worker, size) {
+    var index = 0;
+    var results = new Array(items.length);
+    function next() {
+      if (index >= items.length) return Promise.resolve(results);
+      var i = index++;
+      return Promise.resolve(worker(items[i], i)).then(function (r) {
+        results[i] = r;
+        return next();
+      });
     }
+    var lanes = [];
+    for (var n = 0; n < Math.min(size, items.length); n += 1) lanes.push(next());
+    return Promise.all(lanes).then(function () { return results; });
+  }
+
+  function rawRequest(type, msg) {
+    if (typeof window.HiUtils_createRequest !== 'function') return { missing: true };
     try {
-      return window.HiUtils_createRequest('fileRead', { path: path, mode: 6 });
+      var r = window.HiUtils_createRequest(type, msg);
+      return { value: r };
     } catch (e) {
-      return { ret: false, msg: (e && e.message) || String(e) };
+      return { threw: (e && e.message) || String(e) };
     }
+  }
+
+  function describeRaw(r) {
+    if (r.missing) return 'HiUtils_createRequest missing';
+    if (r.threw) return 'threw: ' + r.threw;
+    var v = r.value;
+    if (v === false) return 'returned false (bus refused)';
+    if (v === true) return 'returned true (no body)';
+    if (v && typeof v === 'object') {
+      var msg = v.msg;
+      var body = typeof msg === 'string' ? msg : JSON.stringify(msg);
+      return 'ret=' + v.ret + ' · ' + (body ? body.length + ' chars · ' + short(body, 110) : 'empty');
+    }
+    return short(String(v), 110);
+  }
+
+  function fileRead(path) {
+    var r = rawRequest('fileRead', { path: path, mode: 6 });
+    var ok = !r.missing && !r.threw && r.value && r.value.ret && typeof r.value.msg === 'string' && r.value.msg.length;
+    return { ok: ok, raw: r, text: ok ? r.value.msg : '' };
+  }
+
+  function wsProbe(names) {
+    return new Promise(function (resolve) {
+      var out = { status: 'connecting', error: '', hits: [], seen: 0 };
+      var ws;
+      try {
+        ws = new WebSocket('wss://localhost:9888');
+      } catch (e) {
+        out.status = 'cannot construct';
+        out.error = (e && e.message) || String(e);
+        return resolve(out);
+      }
+      var settled = false;
+      function done() {
+        if (settled) return;
+        settled = true;
+        try { ws.close(); } catch (e) {}
+        resolve(out);
+      }
+      var timer = setTimeout(function () {
+        if (out.status === 'connecting') out.status = 'no open (timeout)';
+        done();
+      }, 9000);
+      ws.onopen = function () {
+        out.status = 'open';
+        names.forEach(function (name, i) {
+          try {
+            ws.send(JSON.stringify({
+              path: 'phoenix://service/' + name,
+              method: '',
+              parameters: { api: 'apiVersion', args: '' },
+              session: 100 + i,
+              timeout: 5,
+              identifier: identifier()
+            }));
+          } catch (e) {}
+        });
+      };
+      ws.onmessage = function (e) {
+        out.seen += 1;
+        var text = String(e.data);
+        try {
+          var parsed = JSON.parse(text);
+          if (parsed && parsed.ret) out.hits.push('session' + parsed.session + ':' + short(parsed.msg, 60));
+          else if (parsed && parsed.msg && !/Wrong request|Not supported/i.test(String(parsed.msg))) {
+            out.hits.push('session' + parsed.session + ':' + short(parsed.msg, 60));
+          }
+        } catch (err) {}
+      };
+      ws.onerror = function () { out.error = 'socket error'; };
+      ws.onclose = function (e) { out.closed = e && e.code; clearTimeout(timer); done(); };
+    });
+  }
+
+  function run() {
+    clear();
+    summary = {};
+    $('run').disabled = true;
+    $('summary').hidden = false;
+    setVerdict('pending', 'Running…');
+
+    var ident = identifier();
+    head('identity');
+    add('origin', location.origin || location.href);
+    add('secure context', String(window.isSecureContext));
+    add('vowOS', window.vowOS ? 'present' : 'missing', window.vowOS ? 'good' : 'bad');
+    add('vowOS.service', window.vowOS && window.vowOS.service ? 'present' : 'missing');
+    add('omi_platform', window.omi_platform ? 'present' : 'missing');
+    add('HiUtils_createRequest', typeof window.HiUtils_createRequest === 'function' ? 'present' : 'missing');
+    add('Hisense_installApp', typeof window.Hisense_installApp === 'function' ? 'present' : 'missing');
+    add('appIdentifier', short(ident, 70) || '(empty)');
+    add('appId', short(appId(), 40) || '(empty)');
+    try {
+      add('navigator.appIdentifier', short(window.navigator && window.navigator.appIdentifier, 70) || '(none)');
+    } catch (e) { add('navigator.appIdentifier', '(blocked)'); }
+
+    var hisense = [];
+    try {
+      for (var key in window) {
+        if (/^Hisense_/.test(key)) hisense.push(key.replace('Hisense_', ''));
+      }
+    } catch (e) {}
+    add('Hisense_* functions', hisense.length ? hisense.join(', ') : 'none', hisense.length ? 'good' : '');
+    summary.ident = short(ident, 34) || 'none';
+
+    var chain = Promise.resolve();
+
+    // ---------- 1. file access ----------
+    chain = chain.then(function () {
+      head('file access (this is the big one)');
+      var appinfo = fileRead('websdk/Appinfo.json');
+      add('read websdk/Appinfo.json', appinfo.ok ? appinfo.text.length + ' chars · ' + short(appinfo.text, 100) : describeRaw(appinfo.raw), appinfo.ok ? 'good' : 'bad');
+      summary.appinfo = appinfo.ok ? appinfo.text.length + 'ch' : 'NO';
+      if (appinfo.ok) {
+        var count = null;
+        try { count = JSON.parse(appinfo.text).AppInfo.length; } catch (e) {}
+        if (count !== null) add('app list entries', String(count), 'good');
+      }
+
+      var listAttempts = ['fileList', 'listDir', 'readDir', 'getFileList'];
+      var listCalls = listAttempts.map(function (api) {
+        return busCall('hiutils', { api: api, args: { path: 'APPS:pkgs/tv.vidaa.jsservice.system/CHA/' } }, 2500);
+      });
+      return Promise.all(listCalls).then(function (res) {
+        res.forEach(function (r, i) {
+          add('hiutils/' + listAttempts[i], r.ok ? 'HTTP ' + r.status + ' · ' + short(r.text, 90) : r.error, unknownApi(r) ? '' : (r.ok && r.status === 200 ? 'good' : 'bad'));
+        });
+      });
+    });
+
+    // ---------- 2. service existence ----------
+    chain = chain.then(function () {
+      head('service existence (' + SERVICES.length + ' names, api __nope__)');
+      return pool(SERVICES, function (name) {
+        return busCall(name, { api: '__nope__', args: '' }, 2500).then(function (r) {
+          return { name: name, r: r };
+        });
+      }, 6).then(function (list) {
+        var found = [];
+        list.forEach(function (item) {
+          if (missingService(item.r)) return;
+          if (item.r.ok && item.r.status === 200) {
+            found.push(item.name);
+            add('service ' + item.name, 'HTTP 200 · ' + short(item.r.text, 70), 'good');
+          }
+        });
+        summary.svc = found.join(', ') || 'none';
+        add('services found', found.length + ': ' + (summary.svc), found.length ? 'good' : 'warn');
+      });
+    });
+
+    // ---------- 3. api enumeration ----------
+    chain = chain.then(function () {
+      head('api enumeration on ' + summary.svc);
+      var services = (summary.svc || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+      var tasks = [];
+      services.forEach(function (service) {
+        APIS.forEach(function (api) { tasks.push({ service: service, api: api }); });
+      });
+      return pool(tasks, function (task) {
+        return busCall(task.service, { api: task.api, args: '' }, 2500).then(function (r) {
+          return { task: task, r: r };
+        });
+      }, 8).then(function (list) {
+        var hits = {};
+        list.forEach(function (item) {
+          if (!item.r.ok) return;
+          if (item.r.status !== 200) return;
+          if (unknownApi(item.r)) return;
+          var key = item.task.service;
+          hits[key] = hits[key] || [];
+          hits[key].push(item.task.api);
+          add(item.task.service + '/' + item.task.api, 'HTTP 200 · ' + short(item.r.text, 95), 'good');
+        });
+        summary.hits = hits;
+        var flat = [];
+        Object.keys(hits).forEach(function (k) { flat.push(k + ': ' + hits[k].join('+') + ' (' + hits[k].length + ')'); });
+        add('known APIs', flat.join(' | ') || 'none', flat.length ? 'good' : 'bad');
+        summary.apiSummary = flat.join(' | ');
+      });
+    });
+
+    // ---------- 4. direct pkgmgr detail ----------
+    chain = chain.then(function () {
+      head('pkgmgr detail');
+      var calls = [
+        { api: 'getPkgInfo', args: { name: 'tv.vidaa.jsservice.system' } },
+        { api: 'getPkgInfo', args: 'tv.vidaa.jsservice.system' },
+        { api: 'getPkgList', args: '' },
+        { api: 'getAppList', args: '' }
+      ];
+      return Promise.all(calls.map(function (c) {
+        return busCall('pkgmgr', { api: c.api, args: c.args }, 3000).then(function (r) { return { c: c, r: r }; });
+      })).then(function (res) {
+        res.forEach(function (item) {
+          add('pkgmgr/' + item.c.api + ' ' + short(JSON.stringify(item.c.args), 26),
+            item.r.ok ? 'HTTP ' + item.r.status + ' · ' + short(item.r.text, 170) : item.r.error,
+            unknownApi(item.r) ? 'warn' : 'good');
+        });
+      });
+    });
+
+    // ---------- 5. identifier sensitivity ----------
+    chain = chain.then(function () {
+      head('does the identifier header matter?');
+      var ids = [ident, 'lkM39i2I1JuINUyqQZ7+Lw==', ''];
+      return Promise.all(ids.map(function (id, i) {
+        return busCall('tvinfo', { api: 'apiVersion', args: '' }, 3000, id).then(function (r) {
+          return { i: i, r: r };
+        });
+      })).then(function (res) {
+        res.forEach(function (item) {
+          add('tvinfo/apiVersion id#' + item.i,
+            item.r.ok ? 'HTTP ' + item.r.status + ' · ' + short(item.r.text, 110) : item.r.error,
+            item.r.ok && !/EACCES/.test(item.r.text) ? 'good' : 'warn');
+        });
+      });
+    });
+
+    // ---------- 6. websocket bus ----------
+    chain = chain.then(function () {
+      head('secondary bus · wss://localhost:9888');
+      return wsProbe(SERVICES).then(function (out) {
+        add('socket', out.status + (out.closed !== undefined ? ' · closed ' + out.closed : '') + ' · messages ' + out.seen + (out.error ? ' · ' + out.error : ''),
+          out.status === 'open' ? 'good' : 'bad');
+        add('unique replies', String(out.hits.length), out.hits.length ? 'good' : 'warn');
+        out.hits.slice(0, 20).forEach(function (h) { add('ws reply', h, 'good'); });
+        summary.ws = out.status + '/' + out.hits.length;
+      });
+    });
+
+    chain.then(function () {
+      add('—', 'probe finished', 'good');
+      $('run').disabled = false;
+      finish();
+    }).catch(function (e) {
+      add('probe error', (e && e.message) || String(e), 'bad');
+      $('run').disabled = false;
+      finish();
+    });
+  }
+
+  function finish() {
+    var good = summary.svc && summary.svc !== 'none';
+    setVerdict(good ? 'good' : 'bad', good ? 'SERVICE BUS REACHABLE' : 'SERVICE BUS NOT REACHABLE');
+
+    summaryLine('appIdentifier', summary.ident || '—');
+    summaryLine('read app list', summary.appinfo || '—');
+    summaryLine('services', summary.svc || '—');
+    summaryLine('known APIs', short(summary.apiSummary || '—', 320));
+    summaryLine('second bus :9888', summary.ws || '—');
+
+    renderQr();
+    try { window.scrollTo(0, 0); } catch (e) {}
+    try { $('run').focus(); } catch (e) {}
   }
 
   function summaryLine(k, v) {
@@ -207,160 +527,15 @@
     $('verdict').textContent = message;
   }
 
-  function run() {
-    clear();
-    summary = {};
-    $('run').disabled = true;
-    $('summary').hidden = false;
-    setVerdict('pending', 'Running…');
-
-    add('origin', location.origin || location.href);
-    add('protocol', location.protocol);
-    add('secure context', String(window.isSecureContext));
-    add('omi_platform', typeof window.omi_platform === 'object' ? 'present' : 'missing', typeof window.omi_platform === 'object' ? 'good' : 'bad');
-    add('opera_omi', typeof window.opera_omi === 'object' ? 'present' : 'missing');
-    add('vowOS', window.vowOS ? 'present' : 'missing', window.vowOS ? 'good' : 'bad');
-    add('vowOS.service', window.vowOS && window.vowOS.service ? 'present' : 'missing', window.vowOS && window.vowOS.service ? 'good' : 'bad');
-    add('vowOSContext', window.vowOSContext ? 'present' : 'missing');
-    add('HiUtils_createRequest', typeof window.HiUtils_createRequest === 'function' ? 'present' : 'missing');
-    add('Hisense_installApp', typeof window.Hisense_installApp === 'function' ? 'present' : 'missing');
-    add('appIdentifier', short(identifier(), 80) || '(empty)');
-
-    summary.origin = location.origin || location.href;
-    summary.vow = window.vowOS ? 'yes' : 'no';
-    summary.omi = window.omi_platform ? 'yes' : 'no';
-    summary.ident = short(identifier(), 40) || '(empty)';
-    summary.bus = '?';
-
-    var chain = Promise.resolve();
-
-    chain = chain.then(function () {
-      add('—', 'bus reachability', '');
-      return busCall('tvinfo', { api: 'apiVersion', args: '' }).then(function (r) {
-        if (!r.ok) {
-          add('tvinfo / apiVersion', r.error, 'bad');
-          summary.bus = 'BLOCKED';
-          return;
-        }
-        add('tvinfo / apiVersion', 'HTTP ' + r.status + ' · ' + short(r.text, 120), r.status === 200 ? 'good' : 'warn');
-        summary.bus = r.status === 200 ? 'OK' : ('HTTP' + r.status);
-      });
-    });
-
-    chain = chain.then(function () {
-      if (summary.bus !== 'OK') return;
-      return busCall('hiutils', { api: 'getUIVersion', args: '' }).then(function (r) {
-        add('hiutils / getUIVersion', r.ok ? 'HTTP ' + r.status + ' · ' + short(r.text, 120) : r.error, r.ok ? 'good' : 'bad');
-        if (r.ok) summary.uiver = short(r.text, 40);
-      });
-    }).then(function () {
-      if (summary.bus !== 'OK') return;
-      return busCall('pkgmgr', { api: 'getInstalledPkgs', args: '' }).then(function (r) {
-        var count = null;
-        try {
-          var parsed = JSON.parse(r.text);
-          if (parsed && parsed.msg && parsed.msg.length !== undefined) count = parsed.msg.length;
-        } catch (e) {}
-        add('pkgmgr / getInstalledPkgs', r.ok ? 'HTTP ' + r.status + ' · packages=' + String(count) : r.error, r.ok ? 'good' : 'warn');
-        summary.pkg = r.ok ? String(count) : '?';
-      });
-    });
-
-    chain = chain.then(function () {
-      if (summary.bus !== 'OK') return;
-      add('—', 'service existence (404 = not routed, 200 = exists)', '');
-      var index = 0;
-      var found = [];
-      function next() {
-        if (index >= SERVICES.length) {
-          summary.svc = found.join(', ') || 'none';
-          add('services found', found.join(', ') || 'none', found.length ? 'good' : 'warn');
-          return Promise.resolve();
-        }
-        var name = SERVICES[index];
-        index += 1;
-        return busCall(name, { api: 'apiVersion', args: '' }).then(function (r) {
-          add('service ' + name, r.ok ? 'HTTP ' + r.status + ' · ' + short(r.text, 80) : r.error, r.ok && r.status === 200 ? 'good' : (r.ok ? '' : 'warn'));
-          if (r.ok && r.status === 200) found.push(name);
-          return next();
-        });
-      }
-      return next();
-    });
-
-    chain = chain.then(function () {
-      add('—', 'package manifest reads', '');
-      var reads = [];
-      var readable = [];
-      for (var i = 0; i < PKG_BASES.length; i += 1) {
-        for (var j = 0; j < PKG_FILES.length; j += 1) {
-          reads.push({ base: PKG_BASES[i], file: PKG_FILES[j] });
-        }
-      }
-      var index = 0;
-      function next() {
-        if (index >= reads.length) {
-          summary.files = readable.join(', ') || 'none';
-          add('files readable', readable.join(', ') || 'none', readable.length ? 'good' : 'warn');
-          return Promise.resolve();
-        }
-        var item = reads[index];
-        index += 1;
-        var result = readFile(item.base + item.file);
-        if (result && result.ret && typeof result.msg === 'string' && result.msg.length) {
-          readable.push(item.file + ':' + result.msg.length);
-          add('read ' + item.file, result.msg.length + ' bytes · ' + short(result.msg, 150), 'good');
-        }
-        return next();
-      }
-      return next();
-    });
-
-    chain.then(function () {
-      add('—', 'probe finished', 'good');
-      $('run').disabled = false;
-      finish();
-    }).catch(function (e) {
-      add('probe error', (e && e.message) || String(e), 'bad');
-      $('run').disabled = false;
-      finish();
-    });
-  }
-
-  function finish() {
-    if (summary.bus === 'OK') {
-      setVerdict('good', 'SERVICE BUS REACHABLE');
-    } else {
-      setVerdict('bad', 'SERVICE BUS NOT REACHABLE');
-    }
-
-    summaryLine('origin', summary.origin || '?');
-    summaryLine('vowOS / omi_platform', (summary.vow || '?') + ' / ' + (summary.omi || '?'));
-    summaryLine('appIdentifier', summary.ident || '(empty)');
-    summaryLine('bus (tvinfo)', summary.bus || '?');
-    summaryLine('ui version', summary.uiver || '—');
-    summaryLine('packages', summary.pkg || '—');
-    summaryLine('services found', summary.svc || '—');
-    summaryLine('files readable', summary.files || '—');
-
-    renderQr();
-
-    try { window.scrollTo(0, 0); } catch (e) {}
-    try { $('run').focus(); } catch (e) {}
-  }
-
   function renderQr() {
     var text = [
-      'VP3',
-      'origin=' + (summary.origin || '?'),
-      'vow=' + (summary.vow || '?') + ' omi=' + (summary.omi || '?'),
-      'ident=' + (summary.ident || ''),
-      'bus=' + (summary.bus || '?'),
-      'pkg=' + (summary.pkg || '?'),
+      'VP4',
+      'appinfo=' + (summary.appinfo || '?'),
       'svc=' + (summary.svc || '?'),
-      'files=' + (summary.files || '?')
+      'api=' + (summary.apiSummary || '?'),
+      'ws=' + (summary.ws || '?')
     ].join('\n');
-    if (text.length > 900) text = text.slice(0, 900);
+    if (text.length > 880) text = text.slice(0, 880);
     window.__probeSummary = text;
     var box = $('qr-box');
     box.innerHTML = '';
@@ -422,11 +597,6 @@
     else list[0].focus();
   }
 
-  function scrollPage(direction, amount) {
-    var step = amount || 130;
-    if (typeof window.scrollBy === 'function') window.scrollBy(0, direction * step);
-  }
-
   $('run').addEventListener('click', run);
   $('copy').addEventListener('click', copyResults);
 
@@ -437,12 +607,10 @@
       event.preventDefault();
       return;
     }
-    if (key === 38) { scrollPage(-1); event.preventDefault(); return; }
-    if (key === 40) { scrollPage(1); event.preventDefault(); return; }
-    if (key === 33) { scrollPage(-1, 520); event.preventDefault(); return; }
-    if (key === 34) { scrollPage(1, 520); event.preventDefault(); return; }
-    if (key === 36) { window.scrollTo(0, 0); event.preventDefault(); return; }
-    if (key === 35) { window.scrollTo(0, document.body.scrollHeight); event.preventDefault(); return; }
+    if (key === 38) { window.scrollBy(0, -130); event.preventDefault(); return; }
+    if (key === 40) { window.scrollBy(0, 130); event.preventDefault(); return; }
+    if (key === 33) { window.scrollBy(0, -520); event.preventDefault(); return; }
+    if (key === 34) { window.scrollBy(0, 520); event.preventDefault(); return; }
     if (key === 13) {
       var active = document.activeElement;
       if (!active || active === document.body) {
