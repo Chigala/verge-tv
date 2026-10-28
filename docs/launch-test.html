@@ -485,10 +485,15 @@
       event.preventDefault();
       return;
     }
-    if (key >= 37 && key <= 40) {
+    if (key === 37 || key === 39) {
       moveFocus(key);
       event.preventDefault();
+      return;
     }
+    if (key === 38) { window.scrollBy(0, -130); event.preventDefault(); return; }
+    if (key === 40) { window.scrollBy(0, 130); event.preventDefault(); return; }
+    if (key === 33) { window.scrollBy(0, -520); event.preventDefault(); return; }
+    if (key === 34) { window.scrollBy(0, 520); event.preventDefault(); return; }
   });
 
   function start() {
@@ -499,6 +504,7 @@
     if (bridge()) {
       verdict('pending', 'Bridge detected. Press Ping bridge, then Launch Netflix.');
     }
+    try { document.getElementById('ping').focus(); } catch (e) {}
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);

@@ -12,22 +12,23 @@
     --red: #ff8892; --blue: #93bbff;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
+  html { overflow-x: hidden; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
   body {
     font-family: "Helvetica Neue", Arial, sans-serif;
-    font-size: clamp(15px, 1.1vw, 21px);
+    font-size: clamp(15px, 1.05vw, 20px);
     background:
       radial-gradient(circle at 92% 3%, rgba(42, 116, 130, .16), transparent 30%),
       radial-gradient(circle at 3% 90%, rgba(64, 76, 142, .12), transparent 32%),
       var(--bg);
   }
-  #app { width: min(1440px, 93vw); margin: 0 auto; padding: 3vh 0 5vh; }
-  .eyebrow { color: var(--cyan); font-size: .7em; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
-  h1 { margin: 6px 0 8px; font-size: clamp(26px, 2.4vw, 44px); line-height: 1.08; letter-spacing: -.03em; }
-  .subtitle { margin: 0; max-width: 940px; color: var(--muted); }
-  .bar { display: flex; gap: 14px; margin: 2.4vh 0; flex-wrap: wrap; }
+  #app { width: min(1400px, 92vw); margin: 0 auto; padding: 2.6vh 0 4vh; }
+  .eyebrow { color: var(--cyan); font-size: .68em; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+  h1 { margin: 6px 0 8px; font-size: clamp(24px, 2.1vw, 40px); line-height: 1.08; letter-spacing: -.03em; }
+  .subtitle { margin: 0; max-width: 940px; color: var(--muted); font-size: .9em; }
+  .bar { display: flex; gap: 14px; margin: 2vh 0; flex-wrap: wrap; }
   .action {
-    min-height: 62px; padding: 14px 24px; border: 1px solid #33415a; border-radius: 13px;
+    min-height: 58px; padding: 12px 24px; border: 1px solid #33415a; border-radius: 13px;
     background: linear-gradient(180deg, #1a2436, #131b29); color: var(--text);
     font: inherit; font-weight: 700; cursor: pointer;
     transition: transform .12s ease, border-color .12s ease;
@@ -35,12 +36,23 @@
   .action.primary { border-color: rgba(90, 216, 208, .55); background: linear-gradient(180deg, #143037, #10242b); }
   .action:focus { outline: 0; border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(90, 216, 208, .22); transform: translateY(-2px); }
   .action:disabled { opacity: .45; }
-  .panel { border: 1px solid var(--line); border-radius: 16px; background: rgba(16, 22, 35, .9); padding: 18px 20px; }
-  .panel h2 { margin: 0 0 12px; font-size: .95em; letter-spacing: .02em; color: var(--muted); }
-  #out { display: flex; flex-direction: column; gap: 5px; max-height: 52vh; overflow-y: auto; }
+  .panel { border: 1px solid var(--line); border-radius: 16px; background: rgba(16, 22, 35, .9); padding: 16px 20px; margin-bottom: 16px; }
+  .panel h2 { margin: 0 0 10px; font-size: .8em; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .verdict { font-size: 1.35em; font-weight: 800; letter-spacing: -.02em; margin-bottom: 10px; }
+  .verdict.good { color: var(--green); }
+  .verdict.bad { color: var(--red); }
+  .verdict.pending { color: var(--amber); }
+  #summary-grid { display: flex; gap: 22px; align-items: flex-start; flex-wrap: nowrap; }
+  #summary-lines { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .sline { display: grid; grid-template-columns: 190px 1fr; gap: 14px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .8em; }
+  .sline .k { color: var(--muted); }
+  .sline .v { color: #e2eaf5; overflow-wrap: anywhere; }
+  #qr-box { flex: 0 0 auto; }
+  #qr-box img, #qr-box canvas { background: #fff; padding: 8px; border-radius: 10px; display: block; }
+  #out { display: flex; flex-direction: column; gap: 4px; }
   .line {
-    display: grid; grid-template-columns: 250px 1fr; gap: 14px;
-    padding: 6px 10px; border-radius: 8px; background: rgba(38, 48, 68, .24);
+    display: grid; grid-template-columns: 240px 1fr; gap: 14px;
+    padding: 5px 9px; border-radius: 8px; background: rgba(38, 48, 68, .24);
     font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .72em;
   }
   .line .k { color: var(--blue); overflow-wrap: anywhere; }
@@ -48,10 +60,9 @@
   .line.good .k { color: var(--green); }
   .line.bad .k { color: var(--red); }
   .line.warn .k { color: var(--amber); }
-  #qr { margin-top: 18px; display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
-  #qr img, #qr canvas { background: #fff; padding: 8px; border-radius: 10px; }
-  .note { color: var(--muted); font-size: .8em; max-width: 620px; }
-  footer { margin-top: 3vh; color: #55627a; font-size: .72em; }
+  #hint { color: var(--muted); font-size: .78em; margin: 0 0 10px; }
+  footer { margin-top: 2vh; color: #55627a; font-size: .72em; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
@@ -59,29 +70,31 @@
   <div class="eyebrow">Verge · VIDAA service probe</div>
   <h1>Does this page reach the TV's service bus?</h1>
   <p class="subtitle">
-    VIDAA exposes an internal service bus on <code>localhost:9009</code>. The installer already uses it to read and
-    write the app list. This page asks the bus harmless read-only questions and reports exactly what comes back.
+    Asks the TV's internal service bus on <code>localhost:9009</code> a set of harmless read-only questions.
+    Results are reported exactly as the TV returns them.
   </p>
 
   <div class="bar">
     <button class="action primary" id="run">Run probe</button>
     <button class="action" id="copy">Copy results</button>
   </div>
+  <p id="hint">D-pad ◀ ▶ selects a button · OK presses · ▲ ▼ scrolls this page</p>
+
+  <section class="panel" id="summary" hidden>
+    <h2>Result</h2>
+    <div class="verdict pending" id="verdict">Running…</div>
+    <div id="summary-grid">
+      <div id="summary-lines"></div>
+      <div id="qr-box"></div>
+    </div>
+  </section>
 
   <section class="panel">
-    <h2>Results</h2>
+    <h2>Details</h2>
     <div id="out"><div class="line"><div class="k">idle</div><div class="v">Press Run probe.</div></div></div>
   </section>
 
-  <section class="panel" id="qr" style="margin-top:18px; display:none">
-    <div>
-      <h2>Photograph this if the text is hard to read</h2>
-      <div id="qr-box"></div>
-    </div>
-    <p class="note">The QR holds the same summary that is on screen. Nothing is uploaded.</p>
-  </section>
-
-  <footer>Verge · service probe v2 · read-only: status reads and file reads only. D-pad moves, OK presses.</footer>
+  <footer>Verge · service probe v3 · read-only: status reads and file reads only.</footer>
 </div>
 
 <script>
@@ -115,12 +128,14 @@
     line.appendChild(kk);
     line.appendChild(vv);
     out.appendChild(line);
-    out.scrollTop = out.scrollHeight;
   }
 
   function clear() {
     rows = [];
     $('out').innerHTML = '';
+    $('summary-lines').innerHTML = '';
+    $('qr-box').innerHTML = '';
+    $('summary').hidden = true;
   }
 
   function short(value, limit) {
@@ -152,15 +167,9 @@
         xhr.open('POST', BUS + service, true);
         xhr.timeout = timeoutMs || 4000;
         try { xhr.setRequestHeader('identifier', identifier()); } catch (e) {}
-        xhr.onload = function () {
-          finish({ ok: true, status: xhr.status, text: xhr.responseText || '' });
-        };
-        xhr.onerror = function () {
-          finish({ ok: false, error: 'network, CORS, or blocked' });
-        };
-        xhr.ontimeout = function () {
-          finish({ ok: false, error: 'timeout' });
-        };
+        xhr.onload = function () { finish({ ok: true, status: xhr.status, text: xhr.responseText || '' }); };
+        xhr.onerror = function () { finish({ ok: false, error: 'network, CORS, or blocked' }); };
+        xhr.ontimeout = function () { finish({ ok: false, error: 'timeout' }); };
         xhr.send(JSON.stringify(args));
       } catch (e) {
         finish({ ok: false, error: (e && e.message) || String(e) });
@@ -179,18 +188,33 @@
     }
   }
 
-  function step(label) {
-    add('—', label, '');
+  function summaryLine(k, v) {
+    var row = document.createElement('div');
+    row.className = 'sline';
+    var kk = document.createElement('div');
+    kk.className = 'k';
+    kk.textContent = k;
+    var vv = document.createElement('div');
+    vv.className = 'v';
+    vv.textContent = v;
+    row.appendChild(kk);
+    row.appendChild(vv);
+    $('summary-lines').appendChild(row);
+  }
+
+  function setVerdict(kind, message) {
+    $('verdict').className = 'verdict' + (kind ? ' ' + kind : '');
+    $('verdict').textContent = message;
   }
 
   function run() {
     clear();
     summary = {};
     $('run').disabled = true;
-    $('qr').style.display = 'none';
+    $('summary').hidden = false;
+    setVerdict('pending', 'Running…');
 
-    var origin = location.origin || location.href;
-    add('origin', origin);
+    add('origin', location.origin || location.href);
     add('protocol', location.protocol);
     add('secure context', String(window.isSecureContext));
     add('omi_platform', typeof window.omi_platform === 'object' ? 'present' : 'missing', typeof window.omi_platform === 'object' ? 'good' : 'bad');
@@ -200,30 +224,34 @@
     add('vowOSContext', window.vowOSContext ? 'present' : 'missing');
     add('HiUtils_createRequest', typeof window.HiUtils_createRequest === 'function' ? 'present' : 'missing');
     add('Hisense_installApp', typeof window.Hisense_installApp === 'function' ? 'present' : 'missing');
-    add('appIdentifier', short(identifier(), 80));
+    add('appIdentifier', short(identifier(), 80) || '(empty)');
 
-    summary.o = location.protocol + '|' + (window.vowOS ? 'vowOS' : 'noVowOS') + '|' + (window.omi_platform ? 'omi' : 'noOmi');
+    summary.origin = location.origin || location.href;
+    summary.vow = window.vowOS ? 'yes' : 'no';
+    summary.omi = window.omi_platform ? 'yes' : 'no';
+    summary.ident = short(identifier(), 40) || '(empty)';
+    summary.bus = '?';
 
     var chain = Promise.resolve();
 
     chain = chain.then(function () {
-      step('bus reachability');
+      add('—', 'bus reachability', '');
       return busCall('tvinfo', { api: 'apiVersion', args: '' }).then(function (r) {
         if (!r.ok) {
           add('tvinfo / apiVersion', r.error, 'bad');
-          summary.bus = 'NO';
+          summary.bus = 'BLOCKED';
           return;
         }
         add('tvinfo / apiVersion', 'HTTP ' + r.status + ' · ' + short(r.text, 120), r.status === 200 ? 'good' : 'warn');
-        summary.bus = r.status === 200 ? 'OK' : 'HTTP' + r.status;
+        summary.bus = r.status === 200 ? 'OK' : ('HTTP' + r.status);
       });
     });
 
     chain = chain.then(function () {
       if (summary.bus !== 'OK') return;
-      step('known services');
       return busCall('hiutils', { api: 'getUIVersion', args: '' }).then(function (r) {
         add('hiutils / getUIVersion', r.ok ? 'HTTP ' + r.status + ' · ' + short(r.text, 120) : r.error, r.ok ? 'good' : 'bad');
+        if (r.ok) summary.uiver = short(r.text, 40);
       });
     }).then(function () {
       if (summary.bus !== 'OK') return;
@@ -240,21 +268,19 @@
 
     chain = chain.then(function () {
       if (summary.bus !== 'OK') return;
-      step('service existence (404 = not routed, 200 = exists)');
+      add('—', 'service existence (404 = not routed, 200 = exists)', '');
       var index = 0;
       var found = [];
       function next() {
         if (index >= SERVICES.length) {
-          summary.svc = found.join(',') || 'none';
+          summary.svc = found.join(', ') || 'none';
           add('services found', found.join(', ') || 'none', found.length ? 'good' : 'warn');
           return Promise.resolve();
         }
         var name = SERVICES[index];
         index += 1;
         return busCall(name, { api: 'apiVersion', args: '' }).then(function (r) {
-          var status = r.ok ? r.status : 'err';
-          var kind = r.ok && r.status === 200 ? 'good' : (r.ok && r.status === 404 ? '' : 'warn');
-          add('service ' + name, r.ok ? 'HTTP ' + r.status + ' · ' + short(r.text, 80) : r.error, kind);
+          add('service ' + name, r.ok ? 'HTTP ' + r.status + ' · ' + short(r.text, 80) : r.error, r.ok && r.status === 200 ? 'good' : (r.ok ? '' : 'warn'));
           if (r.ok && r.status === 200) found.push(name);
           return next();
         });
@@ -263,9 +289,9 @@
     });
 
     chain = chain.then(function () {
-      step('package manifest reads');
+      add('—', 'package manifest reads', '');
       var reads = [];
-      var out = [];
+      var readable = [];
       for (var i = 0; i < PKG_BASES.length; i += 1) {
         for (var j = 0; j < PKG_FILES.length; j += 1) {
           reads.push({ base: PKG_BASES[i], file: PKG_FILES[j] });
@@ -274,19 +300,16 @@
       var index = 0;
       function next() {
         if (index >= reads.length) {
-          summary.files = out.join(',') || 'none';
-          add('files readable', out.length ? out.join(', ') : 'none', out.length ? 'good' : 'warn');
+          summary.files = readable.join(', ') || 'none';
+          add('files readable', readable.join(', ') || 'none', readable.length ? 'good' : 'warn');
           return Promise.resolve();
         }
         var item = reads[index];
         index += 1;
-        var path = item.base + item.file;
-        var result = readFile(path);
+        var result = readFile(item.base + item.file);
         if (result && result.ret && typeof result.msg === 'string' && result.msg.length) {
-          out.push(item.file + ':' + result.msg.length);
+          readable.push(item.file + ':' + result.msg.length);
           add('read ' + item.file, result.msg.length + ' bytes · ' + short(result.msg, 150), 'good');
-        } else if (result && result.ret) {
-          add('read ' + item.file, 'ret=true but empty', 'warn');
         }
         return next();
       }
@@ -296,25 +319,56 @@
     chain.then(function () {
       add('—', 'probe finished', 'good');
       $('run').disabled = false;
-      renderQr();
+      finish();
     }).catch(function (e) {
       add('probe error', (e && e.message) || String(e), 'bad');
       $('run').disabled = false;
+      finish();
     });
   }
 
+  function finish() {
+    if (summary.bus === 'OK') {
+      setVerdict('good', 'SERVICE BUS REACHABLE');
+    } else {
+      setVerdict('bad', 'SERVICE BUS NOT REACHABLE');
+    }
+
+    summaryLine('origin', summary.origin || '?');
+    summaryLine('vowOS / omi_platform', (summary.vow || '?') + ' / ' + (summary.omi || '?'));
+    summaryLine('appIdentifier', summary.ident || '(empty)');
+    summaryLine('bus (tvinfo)', summary.bus || '?');
+    summaryLine('ui version', summary.uiver || '—');
+    summaryLine('packages', summary.pkg || '—');
+    summaryLine('services found', summary.svc || '—');
+    summaryLine('files readable', summary.files || '—');
+
+    renderQr();
+
+    try { window.scrollTo(0, 0); } catch (e) {}
+    try { $('run').focus(); } catch (e) {}
+  }
+
   function renderQr() {
-    var text = 'VP1|' + (summary.o || '') + '|bus:' + (summary.bus || '?') + '|pkg:' + (summary.pkg || '?') + '|svc:' + (summary.svc || '?') + '|files:' + (summary.files || '?');
+    var text = [
+      'VP3',
+      'origin=' + (summary.origin || '?'),
+      'vow=' + (summary.vow || '?') + ' omi=' + (summary.omi || '?'),
+      'ident=' + (summary.ident || ''),
+      'bus=' + (summary.bus || '?'),
+      'pkg=' + (summary.pkg || '?'),
+      'svc=' + (summary.svc || '?'),
+      'files=' + (summary.files || '?')
+    ].join('\n');
     if (text.length > 900) text = text.slice(0, 900);
     window.__probeSummary = text;
-    $('qr').style.display = 'flex';
     var box = $('qr-box');
     box.innerHTML = '';
     if (!window.QRCode) {
       var script = document.createElement('script');
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
       script.onload = function () { drawQr(text); };
-      script.onerror = function () { box.textContent = 'QR library unavailable. Use Copy results.'; };
+      script.onerror = function () { box.textContent = 'QR library unavailable; use the text above.'; };
       document.head.appendChild(script);
       return;
     }
@@ -325,7 +379,7 @@
     var box = $('qr-box');
     box.innerHTML = '';
     try {
-      new window.QRCode(box, { text: text, width: 300, height: 300, correctLevel: window.QRCode.CorrectLevel.L });
+      new window.QRCode(box, { text: text, width: 240, height: 240, correctLevel: window.QRCode.CorrectLevel.L });
     } catch (e) {
       box.textContent = 'QR failed: ' + ((e && e.message) || e);
     }
@@ -346,10 +400,7 @@
     var list = focusables();
     if (!list.length) return;
     var current = document.activeElement;
-    if (list.indexOf(current) === -1) {
-      list[0].focus();
-      return;
-    }
+    if (list.indexOf(current) === -1) { list[0].focus(); return; }
     var from = current.getBoundingClientRect();
     var fx = from.left + from.width / 2;
     var fy = from.top + from.height / 2;
@@ -358,10 +409,8 @@
     for (var i = 0; i < list.length; i += 1) {
       if (list[i] === current) continue;
       var rect = list[i].getBoundingClientRect();
-      var x = rect.left + rect.width / 2;
-      var y = rect.top + rect.height / 2;
-      var dx = x - fx;
-      var dy = y - fy;
+      var dx = (rect.left + rect.width / 2) - fx;
+      var dy = (rect.top + rect.height / 2) - fy;
       var valid = keyCode === 37 ? dx < -5 : keyCode === 39 ? dx > 5 : keyCode === 38 ? dy < -5 : dy > 5;
       if (!valid) continue;
       var primary = (keyCode === 37 || keyCode === 39) ? Math.abs(dx) : Math.abs(dy);
@@ -369,12 +418,13 @@
       var score = primary + cross * 2.5;
       if (score < bestScore) { best = list[i]; bestScore = score; }
     }
-    if (best) {
-      best.focus();
-      best.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    } else {
-      list[0].focus();
-    }
+    if (best) best.focus();
+    else list[0].focus();
+  }
+
+  function scrollPage(direction, amount) {
+    var step = amount || 130;
+    if (typeof window.scrollBy === 'function') window.scrollBy(0, direction * step);
   }
 
   $('run').addEventListener('click', run);
@@ -382,19 +432,22 @@
 
   document.addEventListener('keydown', function (event) {
     var key = event.keyCode;
-    if (key >= 37 && key <= 40) {
+    if (key === 37 || key === 39) {
       moveFocus(key);
       event.preventDefault();
       return;
     }
+    if (key === 38) { scrollPage(-1); event.preventDefault(); return; }
+    if (key === 40) { scrollPage(1); event.preventDefault(); return; }
+    if (key === 33) { scrollPage(-1, 520); event.preventDefault(); return; }
+    if (key === 34) { scrollPage(1, 520); event.preventDefault(); return; }
+    if (key === 36) { window.scrollTo(0, 0); event.preventDefault(); return; }
+    if (key === 35) { window.scrollTo(0, document.body.scrollHeight); event.preventDefault(); return; }
     if (key === 13) {
       var active = document.activeElement;
       if (!active || active === document.body) {
         var list = focusables();
-        if (list.length) {
-          list[0].focus();
-          list[0].click();
-        }
+        if (list.length) { list[0].focus(); list[0].click(); }
       }
       return;
     }
@@ -405,7 +458,6 @@
     }
   });
 
-  // TV browsers do not move focus with the D-pad, so start on the main button.
   try { $('run').focus(); } catch (e) {}
 })();
 </script>
