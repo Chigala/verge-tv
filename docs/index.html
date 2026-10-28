@@ -226,6 +226,7 @@
     <div id="brand">Movie<span>.</span>Catalog</div>
     <div id="nb-search"><svg viewBox="0 0 24 24"><path d="M10 2a8 8 0 0 1 6.32 12.9l5.39 5.4-1.41 1.4-5.4-5.39A8 8 0 1 1 10 2zm0 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12z"/></svg>Search movies &amp; series</div>
     <div id="tabs"></div>
+    <a id="nb-launch-test" class="nb" href="launch-test.html" title="Send a real launch message from this page">Launch test</a>
     <a id="nb-diagnostic" class="nb" href="launcher-diagnostic.html" title="Read-only TV launcher diagnostic">Diagnostic</a>
     <div id="clock"></div>
   </div></div>
@@ -682,6 +683,7 @@
       navEls.push(b);
       tabState.push({ row: 0, cols: [] });
     }
+    navEls.push($('nb-launch-test'));
     navEls.push($('nb-diagnostic'));
   }
   function paintNav() {
@@ -779,7 +781,8 @@
       else if (k === K.DOWN) { if (rowEls.length) zone = 'rows'; }
       else if (k === K.OK) {
         if (navIdx === 0) { openSearch(); return true; }
-        if (navIdx === navEls.length - 1) { window.location.href = 'launcher-diagnostic.html'; return true; }
+        var navTarget = navEls[navIdx];
+        if (navTarget && navTarget.tagName === 'A' && navTarget.href) { window.location.href = navTarget.getAttribute('href'); return true; }
         if (navIdx - 1 !== tabIdx) { heroItem = null; buildTab(navIdx - 1); }
         zone = 'rows';
       }
