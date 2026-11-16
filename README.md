@@ -62,7 +62,7 @@ handles playback while the TV app sends remote commands through its documented
 while the old 60-second resolution wait is removed.
 
 The Worker also retains the older `/resolve` and `/media` implementation for
-diagnostics, but the Pages app no longer calls it. That legacy path can inspect
+legacy clients, but the Pages app no longer calls it. That legacy path can inspect
 plain HLS/MP4 sources and deliberately does not bypass CAPTCHA, login or DRM.
 
 The legacy resolver accepts a movie/TV identifier, fetches the configured source page,

@@ -2,10 +2,8 @@
   "name": "verge-tv",
   "version": "1.0.0",
   "private": true,
-  "description": "Static Verge TV app and VIDAA diagnostics",
+  "description": "Static Verge TV app",
   "scripts": {
-    "dev": "node scripts/dev-server.js",
-    "test": "node scripts/test-launcher-diagnostic.js",
-    "test:browser": "node scripts/browser-smoke-test.js"
+    "dev": "node scripts/dev-server.js"
   }
 }
